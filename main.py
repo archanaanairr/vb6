@@ -12,6 +12,9 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 import openai
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
+
 
 # Logging configuration
 log_dir = "logs"
@@ -239,6 +242,54 @@ Return JSON structure:
 
         logger.debug(f"Created {len(chunks)} chunks for {file_type} file")
         return chunks
+    
+    def merge_class_chunks_locally(
+        self,
+        chunks: List[Dict[str, Any]],
+        filename: str,
+        class_name: str,
+        namespace: str
+    ) -> Dict[str, Any]:
+        """Merge ClassChunk.cs chunks into ONE complete class (as a single file)."""
+        logger.info(f"Locally merging {len(chunks)} chunks for {filename}")
+
+        chunk_bodies = []
+
+        for idx, chunk in enumerate(chunks):
+            class_chunk_code = chunk.get("ClassChunk.cs", "")
+            if not class_chunk_code.strip():
+                continue
+            # Remove `using`, `namespace`, and class wrappers to avoid repeats; only keep inside of the class
+            # Simple regex, handle duplicated headers across chunks
+            body = re.sub(r'using\s+[^\n]+;\n?', '', class_chunk_code)
+            body = re.sub(r'namespace\s+[^\{]+\{', '', body, flags=re.MULTILINE)
+            body = re.sub(r'public\s+class\s+[^\{]+\{', '', body, flags=re.MULTILINE)
+            # Remove any open/close braces and whitespace around
+            body = body.strip()
+            body = body.strip('}').strip()
+            chunk_bodies.append(body)
+
+        # Join all chunk bodies
+        merged_body = "\n\n".join(chunk_bodies)
+
+        # Wrap with a single file's using, namespace, class definition
+        full_code = (
+            "using System;\nusing System.Runtime.InteropServices;\n\n"
+            f"namespace {namespace}\n"
+            "{\n"
+            f"    public class {class_name} : IDisposable\n"
+            "    {\n"
+            f"{self._indent_code(merged_body, 8)}\n"
+            "    }\n"
+            "}\n"
+        )
+
+        return {"Class.cs": full_code}
+
+    def _indent_code(self, code, spaces):
+        indent = " " * spaces
+        return "\n".join(indent + line if line.strip() else "" for line in code.splitlines())
+
 
     def extract_class_name(self, content: str) -> str:
         lines = content.split('\n')
@@ -397,6 +448,39 @@ Return JSON structure:
                 return {"error": f"API call failed: {str(e)}"}
 
         return {"error": "Exhausted all retry attempts"}
+    
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
+    def convert_chunks_parallel(
+        self,
+        chunks: List[str],
+        prompt_template: str,
+        prompt_vars_fn,
+        max_workers: int = 4,
+        max_tokens: int = 8000,
+    ) -> List[Dict[str, Any]]:
+        """
+        Converts all chunks in parallel using the provided prompt_template.
+        prompt_vars_fn(index: int) -> dict : returns dict of prompt variables per chunk.
+        """
+        results = [None] * len(chunks)
+
+        def convert_one(i):
+            prompt_vars = prompt_vars_fn(i)
+            prompt = prompt_template.format(**prompt_vars)
+            return self.call_azure_openai(prompt, max_tokens=max_tokens)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_index = {executor.submit(convert_one, i): i for i in range(len(chunks))}
+            for future in as_completed(future_to_index):
+                idx = future_to_index[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as e:
+                    results[idx] = {"error": str(e)}
+        return results
 
     def convert_bas_file(self, content: str, filename: str, namespace: str) -> Dict[str, Any]:
         logger.info(f"Converting BAS file: {filename}")
@@ -405,32 +489,24 @@ Return JSON structure:
             return {"error": f"Empty content in {filename}"}
 
         if len(content) > 15000:
-            logger.debug("File is large, processing in chunks")
+            logger.debug("File is large, processing in parallel chunks")
             chunks = self.chunk_large_file(content, max_chunk_size=5000, file_type="bas")
-            parts, prev_ctx = [], ""
-
-            for i, chunk in enumerate(chunks):
-                logger.debug(f"Processing chunk {i+1}/{len(chunks)}")
-                prompt = self.conversion_prompts['chunk_converter'].format(
-                    chunk_number=i + 1,
-                    total_chunks=len(chunks),
-                    previous_context=prev_ctx,
-                    vb6_code=chunk,
-                    namespace=namespace
-                )
-                result = self.call_azure_openai(prompt, max_tokens=8000)
-
-                if "error" in result:
-                    logger.warning(f"Chunk {i+1} failed: {result['error']}")
-                    continue
-
-                parts.append(result)
-                prev_ctx = result.get("ContextSummary", "")[:500]
-
-            if not parts:
+            parts = self.convert_chunks_parallel(
+                chunks,
+                self.conversion_prompts['chunk_converter'],
+                lambda i: {
+                    "chunk_number": i + 1,
+                    "total_chunks": len(chunks),
+                    "previous_context": "",
+                    "vb6_code": chunks[i],
+                    "namespace": namespace,
+                },
+                max_workers=4   # Tune as needed
+            )
+            good_parts = [part for part in parts if part and "error" not in part]
+            if not good_parts:
                 return {"error": f"All chunks failed for {filename}"}
-
-            return self.combine_converted_chunks(parts, filename, namespace)
+            return self.combine_converted_chunks(good_parts, filename, namespace)
         else:
             prompt = self.conversion_prompts['module_bas'].format(
                 vb6_code=content,
@@ -504,33 +580,26 @@ Return JSON structure:
         logger.debug(f"Classified {filename} as {purpose}")
 
         if len(content) > 12000:
-            logger.debug("Class file is large, processing in chunks")
+            logger.debug("Class file is large, processing in parallel chunks")
             chunks = self.chunk_large_file(content, max_chunk_size=4000, file_type="cls")
-            parts, prev_ctx = [], ""
-
-            for i, chunk in enumerate(chunks):
-                logger.debug(f"Processing class chunk {i+1}/{len(chunks)}")
-                prompt = self.conversion_prompts['class_chunk_converter'].format(
-                    chunk_number=i + 1,
-                    total_chunks=len(chunks),
-                    previous_context=prev_ctx,
-                    vb6_code=chunk,
-                    namespace=namespace,
-                    class_name=class_name
-                )
-                result = self.call_azure_openai(prompt, max_tokens=8000)
-
-                if "error" in result:
-                    logger.warning(f"Class chunk {i+1} failed: {result['error']}")
-                    continue
-
-                parts.append(result)
-                prev_ctx = result.get("ContextSummary", "")[:500]
-
-            if not parts:
+            parts = self.convert_chunks_parallel(
+                chunks,
+                self.conversion_prompts['class_chunk_converter'],
+                lambda i: {
+                    "chunk_number": i + 1,
+                    "total_chunks": len(chunks),
+                    "previous_context": "",   # Can improve if needed
+                    "vb6_code": chunks[i],
+                    "namespace": namespace,
+                    "class_name": class_name
+                },
+                max_workers=4    # Tune to your quota
+            )
+            good_parts = [part for part in parts if part and "error" not in part]
+            if not good_parts:
                 return {"error": f"All chunks failed for {filename}"}
+            return self.merge_class_chunks_locally(good_parts, filename, class_name, namespace)
 
-            return self.combine_class_chunks(parts, filename, class_name, namespace)
         else:
             prompt = self.conversion_prompts['class_cls'].format(
                 vb6_code=content,
@@ -691,6 +760,7 @@ def health():
 @app.post("/convert")
 async def convert_vb6_project(file: UploadFile = File(...), namespace: str = "ConvertedApp"):
     logger.info(f"Starting conversion for file: {file.filename} with namespace: {namespace}")
+    start_time = time.time()
 
     if not file.filename or not file.filename.endswith(".zip"):
         logger.error("Invalid file type uploaded, expected ZIP")
@@ -892,6 +962,11 @@ dotnet run
             response_data["warning"] = f"Some files failed to convert: {', '.join(failed_files[:3])}{'...' if len(failed_files) > 3 else ''}"
         if large_files:
             response_data["info"] = f"Large files were chunked and processed: {len(large_files)} files"
+
+        elapsed = round(time.time() - start_time, 2)
+        logger.info(f"Total conversion time: {elapsed} seconds")
+        response_data["duration_seconds"] = elapsed
+        response_data["duration_human"] = f"{int(elapsed//60)}m {elapsed%60:.2f}s"
 
         return FileResponse(
             path=str(output_zip),
