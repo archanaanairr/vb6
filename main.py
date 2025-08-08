@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 import openai
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+import shutil, subprocess
+from fastapi import Form
 
 
 # Logging configuration
@@ -758,17 +760,29 @@ def health():
 
 
 @app.post("/convert")
-async def convert_vb6_project(file: UploadFile = File(...), namespace: str = "ConvertedApp"):
-    logger.info(f"Starting conversion for file: {file.filename} with namespace: {namespace}")
+async def convert_vb6_project(
+    file: UploadFile = File(None),
+    github_url: str = Form(None),
+    namespace: str = Form("ConvertedApp"),
+):
+    logger.info(
+        f"Starting conversion for input: {file.filename if file else github_url} with namespace: {namespace}"
+    )
     start_time = time.time()
 
-    if not file.filename or not file.filename.endswith(".zip"):
-        logger.error("Invalid file type uploaded, expected ZIP")
-        raise HTTPException(status_code=400, detail="Please upload a ZIP file")
+    # Validation
+    if not ((file and file.filename and file.filename.endswith(".zip")) or github_url):
+        logger.error("No valid input provided (ZIP file or GitHub URL required)")
+        raise HTTPException(
+            status_code=400, detail="Please upload a ZIP file or provide a GitHub repository URL."
+        )
 
     if not namespace.replace(".", "").replace("_", "").isalnum():
         logger.error("Invalid namespace provided")
-        raise HTTPException(status_code=400, detail="Namespace must be alphanumeric with optional dots and underscores")
+        raise HTTPException(
+            status_code=400,
+            detail="Namespace must be alphanumeric with optional dots and underscores",
+        )
 
     try:
         temp_dir = tempfile.mkdtemp()
@@ -778,22 +792,50 @@ async def convert_vb6_project(file: UploadFile = File(...), namespace: str = "Co
         output_dir.mkdir()
         logger.debug(f"Created temporary directories: {temp_dir}")
 
-        zip_path = Path(temp_dir) / file.filename
-        with open(zip_path, "wb") as f:
-            content = await file.read()
-            if len(content) == 0:
-                raise HTTPException(status_code=400, detail="Uploaded file is empty")
-            f.write(content)
-        logger.debug(f"Saved uploaded ZIP file to {zip_path}")
+        # Extract/Clone input
+        if file and file.filename and file.filename.endswith(".zip"):
+            zip_path = Path(temp_dir) / file.filename
+            with open(zip_path, "wb") as f:
+                content = await file.read()
+                if len(content) == 0:
+                    raise HTTPException(status_code=400, detail="Uploaded file is empty")
+                f.write(content)
+            logger.debug(f"Saved uploaded ZIP file to {zip_path}")
 
-        try:
-            with zipfile.ZipFile(zip_path, "r") as zf:
-                zf.extractall(input_dir)
-        except zipfile.BadZipFile:
-            raise HTTPException(status_code=400, detail="Invalid ZIP file")
-        logger.debug(f"Extracted ZIP contents to {input_dir}")
+            try:
+                with zipfile.ZipFile(zip_path, "r") as zf:
+                    zf.extractall(input_dir)
+            except zipfile.BadZipFile:
+                raise HTTPException(status_code=400, detail="Invalid ZIP file")
+            logger.debug(f"Extracted ZIP contents to {input_dir}")
+            project_name = Path(file.filename).stem
 
-        project_name = Path(file.filename).stem
+        elif github_url:
+            # Only allow github.com for safety
+            if "github.com" not in github_url.lower():
+                logger.error("Only GitHub URLs are accepted.")
+                raise HTTPException(status_code=400, detail="Only GitHub URLs are accepted.")
+
+            try:
+                repo_dir = str(input_dir)
+                logger.info(f"Cloning GitHub repo: {github_url}")
+                subprocess.check_call(['git', 'clone', '--depth', '1', github_url, repo_dir])
+                shutil.rmtree(os.path.join(repo_dir, '.git'), ignore_errors=True)
+            except Exception as e:
+                logger.error(f"GitHub clone failed: {e}")
+                raise HTTPException(status_code=500, detail=f"Error cloning GitHub repo: {e}")
+            logger.debug(f"Cloned GitHub repository to {repo_dir}")
+
+            # Set project name from repo URL
+            project_name = Path(github_url.rstrip("/").split("/")[-1]).stem
+
+        else:
+            logger.error("Input validation failed (should not reach here)")
+            raise HTTPException(
+                status_code=400, detail="No valid input provided"
+            )
+
+        # Clean project name if necessary
         if not project_name.replace("_", "").replace("-", "").isalnum():
             project_name = "MyWorkerService"
         logger.info(f"Using project name: {project_name}")
@@ -817,8 +859,9 @@ async def convert_vb6_project(file: UploadFile = File(...), namespace: str = "Co
 
             try:
                 content = vb_path.read_text(encoding="utf-8", errors="ignore")
-                logger.debug(f"Read file: {vb_path.name} ({len(content)} chars, {len(content.splitlines())} lines)")
-
+                logger.debug(
+                    f"Read file: {vb_path.name} ({len(content)} chars, {len(content.splitlines())} lines)"
+                )
                 if len(content.strip()) == 0:
                     logger.warning(f"Skipping empty file: {vb_path.name}")
                     failed_files.append(f"{vb_path.name} (empty)")
@@ -837,7 +880,6 @@ async def convert_vb6_project(file: UploadFile = File(...), namespace: str = "Co
             if ext == ".bas":
                 logger.info(f"Processing BAS file: {vb_path.name}")
                 converted = converter.convert_bas_file(content, vb_path.name, namespace)
-
                 if "error" in converted:
                     logger.warning(f"BAS conversion failed for {vb_path.name}: {converted['error']}")
                     failed_files.append(f"{vb_path.name} (conversion failed)")
@@ -850,14 +892,12 @@ async def convert_vb6_project(file: UploadFile = File(...), namespace: str = "Co
                             output_path = project_root / "Services" / file_name
                             output_path.write_text(sanitized_code, encoding="utf-8")
                             logger.debug(f"Wrote {file_name} to Services")
-
                 successful_files.append(vb_path.name)
 
             elif ext == ".cls":
                 logger.info(f"Processing CLS file: {vb_path.name}")
                 purpose = converter.classify_cls_purpose(content)
                 converted = converter.convert_cls_file(content, vb_path.name, namespace)
-
                 if "error" in converted:
                     logger.warning(f"CLS conversion failed for {vb_path.name}: {converted['error']}")
                     failed_files.append(f"{vb_path.name} (conversion failed)")
@@ -871,7 +911,6 @@ async def convert_vb6_project(file: UploadFile = File(...), namespace: str = "Co
                             output_path = project_root / target_dir / f"{base}.cs"
                             output_path.write_text(sanitized_code, encoding="utf-8")
                             logger.debug(f"Wrote {base}.cs to {target_dir}")
-
                 successful_files.append(vb_path.name)
                 logger.info(f"Classified and saved {vb_path.name} as {purpose}")
 
@@ -888,7 +927,8 @@ public static class Constants
     public const string APPLICATION_NAME = "{project_name}";
     public const string VERSION = "1.0.0";
     public static readonly DateTime BUILD_DATE = DateTime.Parse("{datetime.now().isoformat()}");
-}}""")
+}}"""
+        )
 
         readme_content = f"""# {project_name} - Converted from VB6
 
@@ -914,11 +954,11 @@ Review J2534 DLL imports (BVTX4J32.dll, BVTX-VCI-RT-J.dll) and test with a DEM90
 Manual review and testing is recommended.
 
 ## Running the Service
-```bash
 dotnet restore
 dotnet build
 dotnet run
-```
+
+text
 
 ## Dependencies
 - .NET 9.0
@@ -927,7 +967,8 @@ dotnet run
 """
         (project_root / "README.md").write_text(readme_content, encoding="utf-8")
         logger.debug("Generated boilerplate files and README")
-        
+
+        # Zip the output
         output_zip = Path(temp_dir) / f"{project_name}_converted.zip"
         try:
             with zipfile.ZipFile(output_zip, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -954,27 +995,29 @@ dotnet run
                 "total_files": len(successful_files) + len(failed_files),
                 "successful": len(successful_files),
                 "failed": len(failed_files),
-                "large_files": len(large_files)
-            }
+                "large_files": len(large_files),
+            },
         }
-
         if failed_files:
-            response_data["warning"] = f"Some files failed to convert: {', '.join(failed_files[:3])}{'...' if len(failed_files) > 3 else ''}"
+            response_data["warning"] = (
+                f"Some files failed to convert: {', '.join(failed_files[:3])}"
+                + ("..." if len(failed_files) > 3 else "")
+            )
         if large_files:
             response_data["info"] = f"Large files were chunked and processed: {len(large_files)} files"
 
         elapsed = round(time.time() - start_time, 2)
         logger.info(f"Total conversion time: {elapsed} seconds")
         response_data["duration_seconds"] = elapsed
-        response_data["duration_human"] = f"{int(elapsed//60)}m {elapsed%60:.2f}s"
+        response_data["duration_human"] = f"{int(elapsed // 60)}m {elapsed % 60:.2f}s"
 
         return FileResponse(
             path=str(output_zip),
             filename=f"{project_name}_converted.zip",
             media_type="application/zip",
-            headers={"X-Conversion-Status": json.dumps(response_data)}
+            headers={"X-Conversion-Status": json.dumps(response_data)},
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
