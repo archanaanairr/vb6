@@ -12,11 +12,11 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 import openai
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
-import shutil, subprocess
+import shutil
+import subprocess
 from fastapi import Form
-
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Logging configuration
 log_dir = "logs"
@@ -70,6 +70,10 @@ Focus on:
 5. Update file I/O to modern .NET (System.IO)
 6. Convert COM objects to .NET equivalents or P/Invoke for Windows API
 7. Handle J2534 API calls with proper [DllImport] attributes
+8. Convert 'Select Case' to 'switch' in C#, handling ranges with multiple cases or if-else if needed.
+9. Remove any extra code, duplicate types, or unused methods that weren't in the original VB6 code.
+10. Ensure all methods have full definitions; if body is missing, add a TODO comment or infer from context.
+11. For third-party libraries like Chilkat, add appropriate 'using Chilkat;' and ensure references are noted (e.g., NuGet: ChilkatDnCore).
 
 VB6 Code:
 {vb6_code}
@@ -83,7 +87,7 @@ Return JSON structure:
 """,
             'class_cls': """
 Convert the following VB6 Class (.cls) file to C# for .NET 9.
-IMPORTANT: Return ONLY a valid JSON object. No markdown, no ```json, no comments, no explanations outside the JSON.
+IMPORTANT: Return ONLY a valid JSON object. No markdown, no ```json
 Use namespace: {namespace}
 Focus on:
 1. Convert properties to C# properties with get/set
@@ -94,6 +98,10 @@ Focus on:
 6. Convert error handling to try-catch
 7. Implement IDisposable for resource management
 8. Handle J2534 API calls with proper [DllImport] attributes and structs (e.g., RX_structure, vciSCONFIG)
+9. Convert 'Select Case' to 'switch' in C#, handling ranges with multiple cases or if-else if needed.
+10. Remove any extra code, duplicate types, or unused methods that weren't in the original VB6 code.
+11. Ensure all methods have full definitions; if body is missing, add a TODO comment or infer from context.
+12. For third-party libraries like Chilkat, add appropriate 'using Chilkat;' and ensure references are noted (e.g., NuGet: ChilkatDnCore).
 
 VB6 Code:
 {vb6_code}
@@ -118,6 +126,10 @@ Focus on:
 7. Convert error handling to try-catch
 8. Preserve method boundaries and context
 9. Handle arrays and memory management for P/Invoke (e.g., Marshal.AllocHGlobal, Marshal.FreeHGlobal)
+10. Convert 'Select Case' to 'switch' in C#, handling ranges with multiple cases or if-else if needed.
+11. Remove any extra code, duplicate types, or unused methods that weren't in the original VB6 code.
+12. Ensure all methods have full definitions; if body is missing, add a TODO comment or infer from context.
+13. For third-party libraries like Chilkat, add appropriate 'using Chilkat;' and ensure references are noted (e.g., NuGet: ChilkatDnCore).
 Previous context summary: {previous_context}
 VB6 Code Chunk:
 {vb6_code}
@@ -130,7 +142,7 @@ Return JSON structure:
 """,
             'chunk_converter': """
 Convert this chunk of a VB6 .bas file (part {chunk_number} of {total_chunks}) to C# for .NET 9.
-IMPORTANT: Return ONLY a valid JSON object. No markdown, no ```json, no comments, no explanations outside the JSON.
+IMPORTANT: Return ONLY a valid JSON object. No markdown, no ```json
 Use namespace: {namespace}
 Focus on:
 1. Maintain variable scope and naming
@@ -139,6 +151,10 @@ Focus on:
 4. Handle J2534 API calls with proper [DllImport] attributes
 5. Convert error handling to try-catch
 6. Modern .NET patterns (e.g., async/await where applicable)
+7. Convert 'Select Case' to 'switch' in C#, handling ranges with multiple cases or if-else if needed.
+8. Remove any extra code, duplicate types, or unused methods that weren't in the original VB6 code.
+9. Ensure all methods have full definitions; if body is missing, add a TODO comment or infer from context.
+10. For third-party libraries like Chilkat, add appropriate 'using Chilkat;' and ensure references are noted (e.g., NuGet: ChilkatDnCore).
 Previous context summary: {previous_context}
 VB6 Code Chunk:
 {vb6_code}
@@ -346,7 +362,7 @@ Return JSON structure:
         if not response_content:
             return {"error": "Empty response from API"}
 
-        cleaned = re.sub(r'^```json\s*\n?', '', response_content, flags=re.MULTILINE)
+        cleaned = re.sub(r'^```json\s*', '', response_content, flags=re.MULTILINE)
         cleaned = re.sub(r'\n?```$', '', cleaned, flags=re.MULTILINE)
         cleaned = cleaned.strip()
 
@@ -396,7 +412,7 @@ Return JSON structure:
                             "role": "system",
                             "content": (
                                 "You are an expert VB6 to C# converter for .NET 9 Worker Services, specializing in J2534 API integration. "
-                                "Return ONLY a valid JSON object. No markdown, no ```json wrapping, no comments, no explanations. "
+                                "Return ONLY a valid JSON object. No markdown, no ```json"
                                 "Ensure complete and properly formatted JSON, handling J2534 structs (e.g., RX_structure, vciSCONFIG) "
                                 "with [StructLayout] and [MarshalAs], and P/Invoke declarations for BVTX4J32.dll and BVTX-VCI-RT-J.dll."
                             )
@@ -450,10 +466,6 @@ Return JSON structure:
                 return {"error": f"API call failed: {str(e)}"}
 
         return {"error": "Exhausted all retry attempts"}
-    
-
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
 
     def convert_chunks_parallel(
         self,
@@ -529,9 +541,13 @@ Ensure:
 3. Consistent naming and formatting
 4. All necessary using statements (e.g., System.Runtime.InteropServices for J2534)
 5. Proper J2534 API integration with [DllImport] and structs
+6. Convert 'Select Case' to 'switch' in C#, handling ranges with multiple cases or if-else if needed.
+7. Remove any extra code, duplicate types, or unused methods that weren't in the original VB6 code.
+8. Ensure all methods have full definitions; if body is missing, add a TODO comment or infer from context.
+9. For third-party libraries like Chilkat, add appropriate 'using Chilkat;' and ensure references are noted (e.g., NuGet: ChilkatDnCore).
 
 Chunks:
-{chr(10).join([f"--- Chunk {i+1} ---{chr(10)}{json.dumps(chunk, indent=2)}" for i, chunk in enumerate(chunks)])}
+{'\n'.join([f"--- Chunk {i+1} ---\n{json.dumps(chunk, indent=2)}" for i, chunk in enumerate(chunks)])}
 
 Return JSON structure:
 {{
@@ -547,7 +563,7 @@ Return JSON structure:
 
         combine_prompt = f"""
 Combine the following C# code chunks from VB6 class file '{filename}' (class name: {class_name}) into a cohesive class.
-IMPORTANT: Return ONLY a valid JSON object. No markdown, no ```json, no comments, no explanations outside the JSON.
+IMPORTANT: Return ONLY a valid JSON object. No markdown, no ```json
 Use namespace: {namespace}
 Ensure:
 1. Single class definition with proper structure
@@ -558,9 +574,13 @@ Ensure:
 6. Proper J2534 API integration with [DllImport], [StructLayout], and [MarshalAs]
 7. Correct handling of structs like RX_structure, vciSCONFIG, VTX_RT_VERSION_ITEM
 8. Memory management for P/Invoke (e.g., Marshal.AllocHGlobal, Marshal.FreeHGlobal)
+9. Convert 'Select Case' to 'switch' in C#, handling ranges with multiple cases or if-else if needed.
+10. Remove any extra code, duplicate types, or unused methods that weren't in the original VB6 code.
+11. Ensure all methods have full definitions; if body is missing, add a TODO comment or infer from context.
+12. For third-party libraries like Chilkat, add appropriate 'using Chilkat;' and ensure references are noted (e.g., NuGet: ChilkatDnCore).
 
 Class Chunks:
-{chr(10).join([f"--- Chunk {i+1} ---{chr(10)}{json.dumps(chunk, indent=2)}" for i, chunk in enumerate(chunks)])}
+{'\n'.join([f"--- Chunk {i+1} ---\n{json.dumps(chunk, indent=2)}" for i, chunk in enumerate(chunks)])}
 
 Return JSON structure:
 {{
@@ -650,7 +670,7 @@ builder.Services.AddLogging(logging =>
         .WriteTo.Console()
         .WriteTo.File("logs/worker_{{Date}}.log", 
             rollingInterval: RollingInterval.Day,
-            retainedFileCountLimit: 7)
+            retainedFileCountLimit = 7)
         .CreateLogger());
 }});
 
@@ -939,10 +959,10 @@ public static class Constants
 - **Large files processed**: {len(large_files)}
 
 ## Large Files Handled
-{chr(10).join([f"- {file}" for file in large_files]) if large_files else "None"}
+{'\n'.join([f"- {file}" for file in large_files]) if large_files else "None"}
 
 ## Failed Files
-{chr(10).join([f"- {file}" for file in failed_files]) if failed_files else "None"}
+{'\n'.join([f"- {file}" for file in failed_files]) if failed_files else "None"}
 
 ## Notes
 This project was automatically converted from VB6 to C# .NET 9, with support for J2534 API integration.
@@ -957,8 +977,6 @@ Manual review and testing is recommended.
 dotnet restore
 dotnet build
 dotnet run
-
-text
 
 ## Dependencies
 - .NET 9.0
@@ -1023,6 +1041,7 @@ text
     except Exception as e:
         logger.error(f"Conversion failed: {e}")
         raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")
+
 if __name__ == "__main__":
     logger.info("Starting FastAPI application")
     import uvicorn
