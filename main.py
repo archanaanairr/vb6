@@ -74,6 +74,9 @@ Focus on:
 9. Remove any extra code, duplicate types, or unused methods that weren't in the original VB6 code.
 10. Ensure all methods have full definitions; if body is missing, add a TODO comment or infer from context.
 11. For third-party libraries like Chilkat, add appropriate 'using Chilkat;' and ensure references are noted (e.g., NuGet: ChilkatDnCore).
+12. Strictly convert ONLY types explicitly defined in the VB6 code (e.g., 'Type' to struct, 'Class' to class, 'Enum' to enum). DO NOT add new enums, structs, classes, or duplicates (e.g., no extra EcuGroup enum if only a class exists).
+13. If a name conflict is detected (e.g., same name for class and struct), rename the secondary type (e.g., EcuGroup_Struct) and comment: '// Renamed to avoid conflict with original class'.
+14. In the output JSON, ensure no duplicate type definitions across files.
 
 VB6 Code:
 {vb6_code}
@@ -102,6 +105,9 @@ Focus on:
 10. Remove any extra code, duplicate types, or unused methods that weren't in the original VB6 code.
 11. Ensure all methods have full definitions; if body is missing, add a TODO comment or infer from context.
 12. For third-party libraries like Chilkat, add appropriate 'using Chilkat;' and ensure references are noted (e.g., NuGet: ChilkatDnCore).
+13. Strictly convert ONLY types explicitly defined in the VB6 code (e.g., 'Type' to struct, 'Class' to class, 'Enum' to enum). DO NOT add new enums, structs, classes, or duplicates (e.g., no extra EcuGroup enum if only a class exists).
+14. If a name conflict is detected (e.g., same name for class and struct), rename the secondary type (e.g., EcuGroup_Struct) and comment: '// Renamed to avoid conflict with original class'.
+15. In the output JSON, ensure no duplicate type definitions across files.
 
 VB6 Code:
 {vb6_code}
@@ -130,6 +136,9 @@ Focus on:
 11. Remove any extra code, duplicate types, or unused methods that weren't in the original VB6 code.
 12. Ensure all methods have full definitions; if body is missing, add a TODO comment or infer from context.
 13. For third-party libraries like Chilkat, add appropriate 'using Chilkat;' and ensure references are noted (e.g., NuGet: ChilkatDnCore).
+14. Strictly convert ONLY types explicitly defined in the VB6 code (e.g., 'Type' to struct, 'Class' to class, 'Enum' to enum). DO NOT add new enums, structs, classes, or duplicates (e.g., no extra EcuGroup enum if only a class exists).
+15. If a name conflict is detected (e.g., same name for class and struct), rename the secondary type (e.g., EcuGroup_Struct) and comment: '// Renamed to avoid conflict with original class'.
+16. In the output JSON, ensure no duplicate type definitions across files.
 Previous context summary: {previous_context}
 VB6 Code Chunk:
 {vb6_code}
@@ -155,6 +164,9 @@ Focus on:
 8. Remove any extra code, duplicate types, or unused methods that weren't in the original VB6 code.
 9. Ensure all methods have full definitions; if body is missing, add a TODO comment or infer from context.
 10. For third-party libraries like Chilkat, add appropriate 'using Chilkat;' and ensure references are noted (e.g., NuGet: ChilkatDnCore).
+11. Strictly convert ONLY types explicitly defined in the VB6 code (e.g., 'Type' to struct, 'Class' to class, 'Enum' to enum). DO NOT add new enums, structs, classes, or duplicates (e.g., no extra EcuGroup enum if only a class exists).
+12. If a name conflict is detected (e.g., same name for class and struct), rename the secondary type (e.g., EcuGroup_Struct) and comment: '// Renamed to avoid conflict with original class'.
+13. In the output JSON, ensure no duplicate type definitions across files.
 Previous context summary: {previous_context}
 VB6 Code Chunk:
 {vb6_code}
@@ -290,6 +302,10 @@ Return JSON structure:
         # Join all chunk bodies
         merged_body = "\n\n".join(chunk_bodies)
 
+        # Post-merge cleanup: Remove duplicate types using regex
+        merged_body = re.sub(r'(public\s+(enum|struct|class)\s+(EcuGroup|DataElement)\s*{[^}]*}\s*)+', r'\1', merged_body, flags=re.DOTALL | re.IGNORECASE)  # Dedup specific known conflicts
+        merged_body = re.sub(r'\s*public\s+(enum|struct)\s+(EcuGroup|DataElement)\s*{[^}]*}\s*', '', merged_body, flags=re.DOTALL | re.IGNORECASE)  # Remove extra enums/structs if class exists
+
         # Wrap with a single file's using, namespace, class definition
         full_code = (
             "using System;\nusing System.Runtime.InteropServices;\n\n"
@@ -349,6 +365,20 @@ Return JSON structure:
         # Default to model for simple classes
         return "model"
 
+    def validate_and_fix_code(self, code: str) -> str:
+        # Simple regex to detect duplicates (e.g., class and enum with same name)
+        type_names = re.findall(r'public\s+(class|struct|enum)\s+(\w+)', code)
+        seen = {}
+        for type_kind, name in type_names:
+            if name in seen and seen[name] != type_kind:
+                # Conflict: Remove the non-class one (assuming classes are primary)
+                if type_kind != 'class':
+                    code = re.sub(rf'public\s+{type_kind}\s+{name}\s*{{[^}}]*}}', '', code, flags=re.DOTALL)
+                else:
+                    code = re.sub(rf'public\s+{seen[name]}\s+{name}\s*{{[^}}]*}}', '', code, flags=re.DOTALL)
+            seen[name] = type_kind
+        return code
+
     def sanitize_code(self, code: str) -> str:
         if not code or not isinstance(code, str):
             return ""
@@ -356,6 +386,7 @@ Return JSON structure:
         code = re.sub(r'/\*.*?\*/', '', code, flags=re.DOTALL)
         code = re.sub(r'\n\s*\n', '\n', code)
         code = re.sub(r'```[a-zA-Z]*\n?', '', code)
+        code = self.validate_and_fix_code(code.strip())  # Add this
         return code.strip()
 
     def extract_json_from_response(self, response_content: str) -> Dict[str, Any]:
@@ -415,6 +446,11 @@ Return JSON structure:
                                 "Return ONLY a valid JSON object. No markdown, no ```json"
                                 "Ensure complete and properly formatted JSON, handling J2534 structs (e.g., RX_structure, vciSCONFIG) "
                                 "with [StructLayout] and [MarshalAs], and P/Invoke declarations for BVTX4J32.dll and BVTX-VCI-RT-J.dll."
+                                "Strictly convert ONLY types (classes, structs, enums) that are explicitly defined in the VB6 code. "
+                                "DO NOT infer, add, or generate new enums, structs, classes, or any other types that are not present in the original VB6 code. "
+                                "VB6 'Type' definitions convert to C# structs; VB6 'Class' to C# classes; VB6 'Enum' to C# enums. "
+                                "Avoid any name conflicts: Ensure no duplicate type names (e.g., no class and enum/struct with the same name like EcuGroup or DataElement). "
+                                "If a potential conflict arises, rename the conflicting type with a suffix like '_Struct' and add a comment explaining the rename."
                             )
                         },
                         {"role": "user", "content": prompt}
@@ -545,6 +581,8 @@ Ensure:
 7. Remove any extra code, duplicate types, or unused methods that weren't in the original VB6 code.
 8. Ensure all methods have full definitions; if body is missing, add a TODO comment or infer from context.
 9. For third-party libraries like Chilkat, add appropriate 'using Chilkat;' and ensure references are noted (e.g., NuGet: ChilkatDnCore).
+10. Scan for and remove any duplicate or extraneous types (e.g., enums/structs not in original VB6 code, like duplicate EcuGroup or DataElement).
+11. If conflicts remain (e.g., class and enum with same name), remove the inferred one (prefer original class) or rename as '_Struct'/'_Enum'.
 
 Chunks:
 {'\n'.join([f"--- Chunk {i+1} ---\n{json.dumps(chunk, indent=2)}" for i, chunk in enumerate(chunks)])}
@@ -578,6 +616,8 @@ Ensure:
 10. Remove any extra code, duplicate types, or unused methods that weren't in the original VB6 code.
 11. Ensure all methods have full definitions; if body is missing, add a TODO comment or infer from context.
 12. For third-party libraries like Chilkat, add appropriate 'using Chilkat;' and ensure references are noted (e.g., NuGet: ChilkatDnCore).
+13. Scan for and remove any duplicate or extraneous types (e.g., enums/structs not in original VB6 code, like duplicate EcuGroup or DataElement).
+14. If conflicts remain (e.g., class and enum with same name), remove the inferred one (prefer original class) or rename as '_Struct'/'_Enum'.
 
 Class Chunks:
 {'\n'.join([f"--- Chunk {i+1} ---\n{json.dumps(chunk, indent=2)}" for i, chunk in enumerate(chunks)])}
