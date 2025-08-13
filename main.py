@@ -66,7 +66,7 @@ Focus on:
 1. Convert global variables to static properties in a Constants/GlobalVariables class
 2. Convert functions/subroutines to static methods in service classes
 3. Convert VB6-specific data types to C# equivalents (e.g., Long to uint, Byte to byte)
-4. Convert error handling to try-catch blocks
+4. Convert error handling to try-catch, but DO NOT re-throw exceptions in catch blocks. Instead, log the error (optional) and return an appropriate default value (e.g., "" for string functions, null for objects, false for bools, or just return for void). Only re-throw if the original VB6 code uses Err.Raise.
 5. Update file I/O to modern .NET (System.IO)
 6. Convert COM objects to .NET equivalents or P/Invoke for Windows API
 7. Handle J2534 API calls with proper [DllImport] attributes
@@ -94,9 +94,9 @@ Focus on:
 2. Convert methods to C# methods
 3. Convert events to C# events or delegates
 4. Convert VB6 data types to C# equivalents (e.g., Long to uint, Byte to byte)
-5. Handle initialization in constructor and cleanup in Dispose
-6. Convert error handling to try-catch
-7. Implement IDisposable for resource management
+5. If VB6 Class_Initialize or setup code exists, handle initialization in a C# constructor. If no custom initialization is needed, omit the constructor.
+6. Convert error handling to try-catch, but DO NOT re-throw exceptions in catch blocks. Instead, log the error (optional) and return an appropriate default value (e.g., "" for string functions, null for objects, false for bools, or just return for void). Only re-throw if the original VB6 code uses Err.Raise.
+7. Only implement IDisposable and Dispose() if resource management is required by the original VB6 class. Otherwise, OMIT IDisposable and Dispose().
 8. Handle J2534 API calls with proper [DllImport] attributes and structs (e.g., RX_structure, vciSCONFIG)
 9. Convert 'Select Case' to 'switch' in C#, handling ranges with multiple cases or if-else if needed.
 10. Remove any extra code, duplicate types, or unused methods that weren't in the original VB6 code.
@@ -123,7 +123,7 @@ Focus on:
 4. Convert VB6 data types to C# equivalents (e.g., Long to uint, Byte to byte)
 5. Handle J2534 API calls with [DllImport] and structs (e.g., RX_structure, vciSCONFIG)
 6. Use [StructLayout] and [MarshalAs] for P/Invoke structs
-7. Convert error handling to try-catch
+7. Convert error handling to try-catch, but DO NOT re-throw exceptions in catch blocks. Instead, log the error (optional) and return an appropriate default value (e.g., "" for string functions, null for objects, false for bools, or just return for void). Only re-throw if the original VB6 code uses Err.Raise.
 8. Preserve method boundaries and context
 9. Handle arrays and memory management for P/Invoke (e.g., Marshal.AllocHGlobal, Marshal.FreeHGlobal)
 10. Convert 'Select Case' to 'switch' in C#, handling ranges with multiple cases or if-else if needed.
@@ -149,7 +149,7 @@ Focus on:
 2. Convert functions/subs to C# methods
 3. Convert VB6 data types to C# equivalents (e.g., Long to uint, Byte to byte)
 4. Handle J2534 API calls with proper [DllImport] attributes
-5. Convert error handling to try-catch
+5. Convert error handling to try-catch, but DO NOT re-throw exceptions in catch blocks. Instead, log the error (optional) and return an appropriate default value (e.g., "" for string functions, null for objects, false for bools, or just return for void). Only re-throw if the original VB6 code uses Err.Raise.
 6. Modern .NET patterns (e.g., async/await where applicable)
 7. Convert 'Select Case' to 'switch' in C#, handling ranges with multiple cases or if-else if needed.
 8. Remove any extra code, duplicate types, or unused methods that weren't in the original VB6 code.
@@ -570,7 +570,7 @@ Ensure:
 2. No duplicate methods/properties
 3. Proper inheritance and interfaces if needed
 4. All necessary using statements (e.g., System.Runtime.InteropServices for J2534)
-5. Implement IDisposable for resource cleanup
+5. If VB6 Class_Initialize or setup code exists, handle initialization in a C# constructor. If no custom initialization is needed, omit the constructor.
 6. Proper J2534 API integration with [DllImport], [StructLayout], and [MarshalAs]
 7. Correct handling of structs like RX_structure, vciSCONFIG, VTX_RT_VERSION_ITEM
 8. Memory management for P/Invoke (e.g., Marshal.AllocHGlobal, Marshal.FreeHGlobal)
