@@ -16,7 +16,6 @@ import time
 import shutil
 import subprocess
 from fastapi import Form
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Logging configuration
 log_dir = "logs"
@@ -77,6 +76,7 @@ Focus on:
 12. Strictly convert ONLY types explicitly defined in the VB6 code (e.g., 'Type' to struct, 'Class' to class, 'Enum' to enum). DO NOT add new enums, structs, classes, or duplicates (e.g., no extra EcuGroup enum if only a class exists).
 13. If a name conflict is detected (e.g., same name for class and struct), rename the secondary type (e.g., EcuGroup_Struct) and comment: '// Renamed to avoid conflict with original class'.
 14. In the output JSON, ensure no duplicate type definitions across files.
+15. ALWAYS generate FULL method bodies based on VB6 code; do not leave empty or use placeholders unless the original VB6 has no body. Infer logic if truncated.
 
 VB6 Code:
 {vb6_code}
@@ -108,6 +108,7 @@ Focus on:
 13. Strictly convert ONLY types explicitly defined in the VB6 code (e.g., 'Type' to struct, 'Class' to class, 'Enum' to enum). DO NOT add new enums, structs, classes, or duplicates (e.g., no extra EcuGroup enum if only a class exists).
 14. If a name conflict is detected (e.g., same name for class and struct), rename the secondary type (e.g., EcuGroup_Struct) and comment: '// Renamed to avoid conflict with original class'.
 15. In the output JSON, ensure no duplicate type definitions across files.
+16. ALWAYS generate FULL method bodies based on VB6 code; do not leave empty or use placeholders unless the original VB6 has no body. Infer logic if truncated.
 
 VB6 Code:
 {vb6_code}
@@ -139,6 +140,7 @@ Focus on:
 14. Strictly convert ONLY types explicitly defined in the VB6 code (e.g., 'Type' to struct, 'Class' to class, 'Enum' to enum). DO NOT add new enums, structs, classes, or duplicates (e.g., no extra EcuGroup enum if only a class exists).
 15. If a name conflict is detected (e.g., same name for class and struct), rename the secondary type (e.g., EcuGroup_Struct) and comment: '// Renamed to avoid conflict with original class'.
 16. In the output JSON, ensure no duplicate type definitions across files.
+17. ALWAYS generate FULL method bodies based on VB6 code; do not leave empty or use placeholders unless the original VB6 has no body. Infer logic if truncated.
 Previous context summary: {previous_context}
 VB6 Code Chunk:
 {vb6_code}
@@ -167,6 +169,7 @@ Focus on:
 11. Strictly convert ONLY types explicitly defined in the VB6 code (e.g., 'Type' to struct, 'Class' to class, 'Enum' to enum). DO NOT add new enums, structs, classes, or duplicates (e.g., no extra EcuGroup enum if only a class exists).
 12. If a name conflict is detected (e.g., same name for class and struct), rename the secondary type (e.g., EcuGroup_Struct) and comment: '// Renamed to avoid conflict with original class'.
 13. In the output JSON, ensure no duplicate type definitions across files.
+14. ALWAYS generate FULL method bodies based on VB6 code; do not leave empty or use placeholders unless the original VB6 has no body. Infer logic if truncated.
 Previous context summary: {previous_context}
 VB6 Code Chunk:
 {vb6_code}
@@ -179,7 +182,7 @@ Return JSON structure:
 """
         }
 
-    def chunk_large_file(self, content: str, max_chunk_size: int = 4000, file_type: str = "bas") -> List[str]:
+    def chunk_large_file(self, content: str, max_chunk_size: int = 6000, file_type: str = "bas") -> List[str]:
         logger.debug(f"Chunking {file_type} file with size {len(content)}")
         lines = content.splitlines()
         chunks = []
@@ -257,22 +260,53 @@ Return JSON structure:
                         current_chunk.append(line)
                         current_size += len(line)
 
-        else:
+        else:  # For .bas
+            in_method = False
+            method_start_keywords = ['Public Sub', 'Private Sub', 'Public Function', 'Private Function', 'Sub', 'Function']
+            method_end_keywords = ['End Sub', 'End Function']
+            declare_keywords = ['Declare Function', 'Declare Sub']
             for line in lines:
-                if current_size + len(line) > max_chunk_size and current_chunk:
-                    chunks.append("\n".join(current_chunk))
-                    current_chunk = [line]
-                    current_size = len(line)
-                else:
+                line_stripped = line.strip()
+                if any(keyword in line_stripped for keyword in declare_keywords):
+                    if current_size + len(line) > max_chunk_size and current_chunk and not in_method:
+                        chunks.append("\n".join(current_chunk))
+                        current_chunk = [line]
+                        current_size = len(line)
+                    else:
+                        current_chunk.append(line)
+                        current_size += len(line)
+                elif any(keyword in line_stripped for keyword in method_start_keywords):
+                    if current_size + len(line) > max_chunk_size and current_chunk:
+                        chunks.append("\n".join(current_chunk))
+                        current_chunk = [line]
+                        current_size = len(line)
+                    else:
+                        current_chunk.append(line)
+                        current_size += len(line)
+                    in_method = True
+                elif any(keyword in line_stripped for keyword in method_end_keywords):
                     current_chunk.append(line)
                     current_size += len(line)
+                    in_method = False
+                    if current_size > max_chunk_size * 0.8:
+                        chunks.append("\n".join(current_chunk))
+                        current_chunk = []
+                        current_size = 0
+                else:
+                    if current_size + len(line) > max_chunk_size and current_chunk and not in_method:
+                        chunks.append("\n".join(current_chunk))
+                        current_chunk = [line]
+                        current_size = len(line)
+                    else:
+                        current_chunk.append(line)
+                        current_size += len(line)
 
         if current_chunk:
             chunks.append("\n".join(current_chunk))
 
         logger.debug(f"Created {len(chunks)} chunks for {file_type} file")
         return chunks
-    
+
     def merge_class_chunks_locally(
         self,
         chunks: List[Dict[str, Any]],
@@ -280,50 +314,36 @@ Return JSON structure:
         class_name: str,
         namespace: str
     ) -> Dict[str, Any]:
-        """Merge ClassChunk.cs chunks into ONE complete class (as a single file)."""
         logger.info(f"Locally merging {len(chunks)} chunks for {filename}")
-
         chunk_bodies = []
-
-        for idx, chunk in enumerate(chunks):
+        has_disposable = any("IDisposable" in chunk.get("ClassChunk.cs", "") for chunk in chunks)
+        for chunk in chunks:
             class_chunk_code = chunk.get("ClassChunk.cs", "")
             if not class_chunk_code.strip():
                 continue
-            # Remove `using`, `namespace`, and class wrappers to avoid repeats; only keep inside of the class
-            # Simple regex, handle duplicated headers across chunks
-            body = re.sub(r'using\s+[^\n]+;\n?', '', class_chunk_code)
-            body = re.sub(r'namespace\s+[^\{]+\{', '', body, flags=re.MULTILINE)
-            body = re.sub(r'public\s+class\s+[^\{]+\{', '', body, flags=re.MULTILINE)
-            # Remove any open/close braces and whitespace around
-            body = body.strip()
-            body = body.strip('}').strip()
-            chunk_bodies.append(body)
-
-        # Join all chunk bodies
+            body = re.sub(r'^using\s+[^\n]+;\n?', '', class_chunk_code, flags=re.MULTILINE)
+            body = re.sub(r'^namespace\s+[^\{]+\{\s*', '', body, flags=re.MULTILINE)
+            body = re.sub(r'^public\s+class\s+[^\{]+\{\s*', '', body, flags=re.MULTILINE)
+            body = body.strip('} \n')
+            chunk_bodies.append(body.strip())
         merged_body = "\n\n".join(chunk_bodies)
-
-        # Post-merge cleanup: Remove duplicate types using regex
-        merged_body = re.sub(r'(public\s+(enum|struct|class)\s+(EcuGroup|DataElement)\s*{[^}]*}\s*)+', r'\1', merged_body, flags=re.DOTALL | re.IGNORECASE)  # Dedup specific known conflicts
-        merged_body = re.sub(r'\s*public\s+(enum|struct)\s+(EcuGroup|DataElement)\s*{[^}]*}\s*', '', merged_body, flags=re.DOTALL | re.IGNORECASE)  # Remove extra enums/structs if class exists
-
-        # Wrap with a single file's using, namespace, class definition
-        full_code = (
-            "using System;\nusing System.Runtime.InteropServices;\n\n"
-            f"namespace {namespace}\n"
-            "{\n"
-            f"    public class {class_name} : IDisposable\n"
-            "    {\n"
-            f"{self._indent_code(merged_body, 8)}\n"
-            "    }\n"
-            "}\n"
-        )
-
+        types = re.findall(r'(public\s+(enum|struct|class)\s+\w+\s*\{[^}]*\})', merged_body, flags=re.DOTALL)
+        unique_types = {t[0]: t for t in types}.values()
+        for dup in types:
+            if types.count(dup) > 1:
+                merged_body = merged_body.replace(dup[0], '', types.count(dup) - 1)
+        merged_body = re.sub(r'(\w+\s*\([^)]*\)\s*\{\s*\})', r'\1 // TODO: Implement body from original VB6', merged_body)
+        usings = set()
+        for chunk in chunks:
+            usings.update(re.findall(r'using\s+([^;]+);', chunk.get("ClassChunk.cs", "")))
+        using_str = "\n".join(sorted(f"using {u};" for u in usings if u))
+        inheritance = ": IDisposable" if has_disposable else ""
+        full_code = f"{using_str}\n\nnamespace {namespace}\n{{\n    public class {class_name} {inheritance}\n    {{\n{self._indent_code(merged_body, 8)}\n    }}\n}}\n"
         return {"Class.cs": full_code}
 
     def _indent_code(self, code, spaces):
         indent = " " * spaces
         return "\n".join(indent + line if line.strip() else "" for line in code.splitlines())
-
 
     def extract_class_name(self, content: str) -> str:
         lines = content.split('\n')
@@ -341,12 +361,10 @@ Return JSON structure:
         return "UnknownClass"
 
     def classify_cls_purpose(self, content: str) -> str:
-        """Classify the purpose of a .cls file based on content."""
         lines = content.splitlines()
         method_count = 0
         property_count = 0
         has_declare = False
-
         for line in lines:
             line_stripped = line.strip()
             if any(keyword in line_stripped for keyword in ['Public Sub', 'Private Sub', 'Public Function', 'Private Function']):
@@ -355,23 +373,17 @@ Return JSON structure:
                 property_count += 1
             elif 'Declare' in line_stripped and ('Function' in line_stripped or 'Sub' in line_stripped):
                 has_declare = True
-
-        # If J2534 API calls or multiple methods are present, classify as service
         if has_declare or method_count > 2:
             return "service"
-        # If mostly properties, classify as model
         elif property_count > method_count:
             return "model"
-        # Default to model for simple classes
         return "model"
 
     def validate_and_fix_code(self, code: str) -> str:
-        # Simple regex to detect duplicates (e.g., class and enum with same name)
         type_names = re.findall(r'public\s+(class|struct|enum)\s+(\w+)', code)
         seen = {}
         for type_kind, name in type_names:
             if name in seen and seen[name] != type_kind:
-                # Conflict: Remove the non-class one (assuming classes are primary)
                 if type_kind != 'class':
                     code = re.sub(rf'public\s+{type_kind}\s+{name}\s*{{[^}}]*}}', '', code, flags=re.DOTALL)
                 else:
@@ -386,22 +398,19 @@ Return JSON structure:
         code = re.sub(r'/\*.*?\*/', '', code, flags=re.DOTALL)
         code = re.sub(r'\n\s*\n', '\n', code)
         code = re.sub(r'```[a-zA-Z]*\n?', '', code)
-        code = self.validate_and_fix_code(code.strip())  # Add this
+        code = self.validate_and_fix_code(code.strip())
         return code.strip()
 
     def extract_json_from_response(self, response_content: str) -> Dict[str, Any]:
         if not response_content:
             return {"error": "Empty response from API"}
-
         cleaned = re.sub(r'^```json\s*', '', response_content, flags=re.MULTILINE)
         cleaned = re.sub(r'\n?```$', '', cleaned, flags=re.MULTILINE)
         cleaned = cleaned.strip()
-
         try:
             return json.loads(cleaned)
         except json.JSONDecodeError as e:
             logger.warning(f"Initial JSON parse failed: {e}")
-
             try:
                 fixed = cleaned.replace('\\"', '"').replace('\\\\', '\\')
                 brace_count = 0
@@ -418,7 +427,6 @@ Return JSON structure:
                             return json.loads(json_str)
             except json.JSONDecodeError:
                 pass
-
             json_pattern = r'\{[\s\S]*\}'
             match = re.search(json_pattern, cleaned)
             if match:
@@ -426,14 +434,12 @@ Return JSON structure:
                     return json.loads(match.group(0))
                 except json.JSONDecodeError:
                     pass
-
             error_msg = f"Invalid JSON response: {cleaned[:200]}..."
             logger.error(error_msg)
             return {"error": error_msg}
 
-    def call_azure_openai(self, prompt: str, max_tokens: int = 12000, retries: int = 3) -> Dict[str, Any]:
+    def call_azure_openai(self, prompt: str, max_tokens: int = 16000, retries: int = 3) -> Dict[str, Any]:
         logger.info("Calling Azure OpenAI API")
-
         for attempt in range(retries + 1):
             try:
                 response = client.chat.completions.create(
@@ -451,6 +457,7 @@ Return JSON structure:
                                 "VB6 'Type' definitions convert to C# structs; VB6 'Class' to C# classes; VB6 'Enum' to C# enums. "
                                 "Avoid any name conflicts: Ensure no duplicate type names (e.g., no class and enum/struct with the same name like EcuGroup or DataElement). "
                                 "If a potential conflict arises, rename the conflicting type with a suffix like '_Struct' and add a comment explaining the rename."
+                                "Ensure ALL methods have full bodies; infer logic from VB6 code or context if needed, but do not leave empty methods unless VB6 explicitly has no body."
                             )
                         },
                         {"role": "user", "content": prompt}
@@ -459,89 +466,81 @@ Return JSON structure:
                     temperature=0.1,
                     top_p=0.95
                 )
-
                 response_content = response.choices[0].message.content
                 logger.debug(f"Received response (length: {len(response_content) if response_content else 0})")
-
                 if not response_content:
                     if attempt < retries:
                         logger.info(f"Empty response, retrying (attempt {attempt + 2}/{retries + 1})")
                         continue
                     return {"error": "Empty response from Azure OpenAI API"}
-
                 debug_file = f"logs/api_response_{datetime.now():%Y%m%d_%H%M%S}_{attempt + 1}.txt"
                 with open(debug_file, "w", encoding="utf-8") as f:
                     f.write(response_content)
                 logger.debug(f"Saved raw API response to {debug_file}")
-
                 parsed_response = self.extract_json_from_response(response_content)
-
                 if "error" in parsed_response:
                     if attempt < retries:
                         logger.info(f"JSON parsing failed, retrying (attempt {attempt + 2}/{retries + 1})")
                         continue
                     return parsed_response
-
                 expected_keys = ["Class.cs", "Constants.cs", "ModuleService.cs", "IModuleService.cs", "Chunk.cs", "ClassChunk.cs"]
                 has_valid_key = any(key in parsed_response for key in expected_keys)
-
                 if not has_valid_key:
                     if attempt < retries:
                         logger.info(f"Missing expected keys, retrying (attempt {attempt + 2}/{retries + 1})")
                         continue
                     return {"error": f"Missing expected keys. Found: {list(parsed_response.keys())}"}
-
+                # Check for empty methods
+                for key, code in parsed_response.items():
+                    if key.endswith(".cs") and re.search(r'\w+\s*\([^)]*\)\s*\{\s*\}', code):
+                        logger.warning(f"Empty method detected in {key}; retrying")
+                        if attempt < retries:
+                            continue
+                        parsed_response[key] = re.sub(
+                            r'(\w+\s*\([^)]*\)\s*\{\s*\})',
+                            r'\1 // TODO: Implement body from original VB6',
+                            code
+                        )
                 logger.info("Successfully parsed API response")
                 return parsed_response
-
             except Exception as e:
                 logger.error(f"Error in Azure OpenAI API call (attempt {attempt + 1}): {e}")
                 if attempt < retries:
                     logger.info(f"Retrying due to exception (attempt {attempt + 2}/{retries + 1})")
                     continue
                 return {"error": f"API call failed: {str(e)}"}
-
         return {"error": "Exhausted all retry attempts"}
 
-    def convert_chunks_parallel(
+    def convert_chunks_sequential(
         self,
         chunks: List[str],
         prompt_template: str,
         prompt_vars_fn,
-        max_workers: int = 4,
-        max_tokens: int = 8000,
+        max_tokens: int = 16000,
     ) -> List[Dict[str, Any]]:
         """
-        Converts all chunks in parallel using the provided prompt_template.
-        prompt_vars_fn(index: int) -> dict : returns dict of prompt variables per chunk.
+        Converts chunks sequentially, chaining ContextSummary from previous response.
         """
-        results = [None] * len(chunks)
-
-        def convert_one(i):
+        results = []
+        previous_context = ""
+        for i, chunk in enumerate(chunks):
             prompt_vars = prompt_vars_fn(i)
+            prompt_vars["previous_context"] = previous_context
             prompt = prompt_template.format(**prompt_vars)
-            return self.call_azure_openai(prompt, max_tokens=max_tokens)
-
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_index = {executor.submit(convert_one, i): i for i in range(len(chunks))}
-            for future in as_completed(future_to_index):
-                idx = future_to_index[future]
-                try:
-                    results[idx] = future.result()
-                except Exception as e:
-                    results[idx] = {"error": str(e)}
+            response = self.call_azure_openai(prompt, max_tokens=max_tokens)
+            if "error" not in response:
+                previous_context = response.get("ContextSummary", "")
+            results.append(response)
         return results
 
     def convert_bas_file(self, content: str, filename: str, namespace: str) -> Dict[str, Any]:
         logger.info(f"Converting BAS file: {filename}")
-
         if not content or not content.strip():
             return {"error": f"Empty content in {filename}"}
-
         if len(content) > 15000:
-            logger.debug("File is large, processing in parallel chunks")
-            chunks = self.chunk_large_file(content, max_chunk_size=5000, file_type="bas")
-            parts = self.convert_chunks_parallel(
+            logger.debug("File is large, processing in sequential chunks")
+            chunks = self.chunk_large_file(content, max_chunk_size=6000, file_type="bas")
+            parts = self.convert_chunks_sequential(
                 chunks,
                 self.conversion_prompts['chunk_converter'],
                 lambda i: {
@@ -551,22 +550,32 @@ Return JSON structure:
                     "vb6_code": chunks[i],
                     "namespace": namespace,
                 },
-                max_workers=4   # Tune as needed
+                max_tokens=16000
             )
             good_parts = [part for part in parts if part and "error" not in part]
             if not good_parts:
                 return {"error": f"All chunks failed for {filename}"}
-            return self.combine_converted_chunks(good_parts, filename, namespace)
+            combined = self.combine_converted_chunks(good_parts, filename, namespace)
+            if "error" not in combined:
+                for file_name, code in combined.items():
+                    if file_name.endswith(".cs") and not re.search(r'\{\s*[^}]+\s*\}', code):
+                        logger.warning(f"Incomplete code in {file_name}; retrying")
+                        return self.call_azure_openai(
+                            self.conversion_prompts['module_bas'].format(vb6_code=content, namespace=namespace)
+                        )
+            return combined
         else:
-            prompt = self.conversion_prompts['module_bas'].format(
-                vb6_code=content,
-                namespace=namespace
-            )
-            return self.call_azure_openai(prompt)
+            prompt = self.conversion_prompts['module_bas'].format(vb6_code=content, namespace=namespace)
+            converted = self.call_azure_openai(prompt)
+            if "error" not in converted:
+                for file_name, code in converted.items():
+                    if file_name.endswith(".cs") and not re.search(r'\{\s*[^}]+\s*\}', code):
+                        logger.warning(f"Incomplete code in {file_name}; retrying")
+                        return self.call_azure_openai(prompt)
+            return converted
 
     def combine_converted_chunks(self, chunks: List[Dict[str, Any]], filename: str, namespace: str) -> Dict[str, Any]:
         logger.info(f"Combining {len(chunks)} chunks for {filename}")
-
         combine_prompt = f"""
 Combine the following C# code chunks from VB6 file '{filename}' into cohesive service files.
 IMPORTANT: Return ONLY a valid JSON object. No markdown, no ```json, no comments, no explanations outside the JSON.
@@ -583,6 +592,8 @@ Ensure:
 9. For third-party libraries like Chilkat, add appropriate 'using Chilkat;' and ensure references are noted (e.g., NuGet: ChilkatDnCore).
 10. Scan for and remove any duplicate or extraneous types (e.g., enums/structs not in original VB6 code, like duplicate EcuGroup or DataElement).
 11. If conflicts remain (e.g., class and enum with same name), remove the inferred one (prefer original class) or rename as '_Struct'/'_Enum'.
+12. Ensure every method in ModuleService.cs has a full body; if empty, add '// TODO: Implement based on VB6 logic' but prefer inferring from chunks.
+13. Scan all chunks for method bodies and ensure they are included in the final service class.
 
 Chunks:
 {'\n'.join([f"--- Chunk {i+1} ---\n{json.dumps(chunk, indent=2)}" for i, chunk in enumerate(chunks)])}
@@ -596,78 +607,51 @@ Return JSON structure:
 """
         return self.call_azure_openai(combine_prompt, max_tokens=16000)
 
-    def combine_class_chunks(self, chunks: List[Dict[str, Any]], filename: str, class_name: str, namespace: str) -> Dict[str, Any]:
-        logger.info(f"Combining {len(chunks)} class chunks for {filename}")
-
-        combine_prompt = f"""
-Combine the following C# code chunks from VB6 class file '{filename}' (class name: {class_name}) into a cohesive class.
-IMPORTANT: Return ONLY a valid JSON object. No markdown, no ```json
-Use namespace: {namespace}
-Ensure:
-1. Single class definition with proper structure
-2. No duplicate methods/properties
-3. Proper inheritance and interfaces if needed
-4. All necessary using statements (e.g., System.Runtime.InteropServices for J2534)
-5. If VB6 Class_Initialize or setup code exists, handle initialization in a C# constructor. If no custom initialization is needed, omit the constructor.
-6. Proper J2534 API integration with [DllImport], [StructLayout], and [MarshalAs]
-7. Correct handling of structs like RX_structure, vciSCONFIG, VTX_RT_VERSION_ITEM
-8. Memory management for P/Invoke (e.g., Marshal.AllocHGlobal, Marshal.FreeHGlobal)
-9. Convert 'Select Case' to 'switch' in C#, handling ranges with multiple cases or if-else if needed.
-10. Remove any extra code, duplicate types, or unused methods that weren't in the original VB6 code.
-11. Ensure all methods have full definitions; if body is missing, add a TODO comment or infer from context.
-12. For third-party libraries like Chilkat, add appropriate 'using Chilkat;' and ensure references are noted (e.g., NuGet: ChilkatDnCore).
-13. Scan for and remove any duplicate or extraneous types (e.g., enums/structs not in original VB6 code, like duplicate EcuGroup or DataElement).
-14. If conflicts remain (e.g., class and enum with same name), remove the inferred one (prefer original class) or rename as '_Struct'/'_Enum'.
-
-Class Chunks:
-{'\n'.join([f"--- Chunk {i+1} ---\n{json.dumps(chunk, indent=2)}" for i, chunk in enumerate(chunks)])}
-
-Return JSON structure:
-{{
-  "Class.cs": "C# code for the complete converted class"
-}}
-"""
-        return self.call_azure_openai(combine_prompt, max_tokens=16000)
-
     def convert_cls_file(self, content: str, filename: str, namespace: str) -> Dict[str, Any]:
         logger.info(f"Converting CLS file: {filename}")
-
         if not content or not content.strip():
             return {"error": f"Empty content in {filename}"}
-
         class_name = self.extract_class_name(content)
         logger.debug(f"Detected class name: {class_name}")
-
         purpose = self.classify_cls_purpose(content)
         logger.debug(f"Classified {filename} as {purpose}")
-
         if len(content) > 12000:
-            logger.debug("Class file is large, processing in parallel chunks")
-            chunks = self.chunk_large_file(content, max_chunk_size=4000, file_type="cls")
-            parts = self.convert_chunks_parallel(
+            logger.debug("Class file is large, processing in sequential chunks")
+            chunks = self.chunk_large_file(content, max_chunk_size=6000, file_type="cls")
+            parts = self.convert_chunks_sequential(
                 chunks,
                 self.conversion_prompts['class_chunk_converter'],
                 lambda i: {
                     "chunk_number": i + 1,
                     "total_chunks": len(chunks),
-                    "previous_context": "",   # Can improve if needed
+                    "previous_context": "",
                     "vb6_code": chunks[i],
                     "namespace": namespace,
                     "class_name": class_name
                 },
-                max_workers=4    # Tune to your quota
+                max_tokens=16000
             )
             good_parts = [part for part in parts if part and "error" not in part]
             if not good_parts:
                 return {"error": f"All chunks failed for {filename}"}
-            return self.merge_class_chunks_locally(good_parts, filename, class_name, namespace)
-
+            combined = self.merge_class_chunks_locally(good_parts, filename, class_name, namespace)
+            if "error" not in combined:
+                for file_name, code in combined.items():
+                    if file_name.endswith(".cs") and not re.search(r'\{\s*[^}]+\s*\}', code):
+                        logger.warning(f"Incomplete code in {file_name}; retrying")
+                        return self.call_azure_openai(
+                            self.conversion_prompts['class_cls'].format(vb6_code=content, namespace=namespace)
+                        )
+            return combined
         else:
-            prompt = self.conversion_prompts['class_cls'].format(
-                vb6_code=content,
-                namespace=namespace
-            )
-            return self.call_azure_openai(prompt)
+            prompt = self.conversion_prompts['class_cls'].format(vb6_code=content, namespace=namespace)
+            converted = self.call_azure_openai(prompt)
+            if "error" not in converted:
+                for file_name, code in converted.items():
+                    if file_name.endswith(".cs") and not re.search(r'\{\s*[^}]+\s*\}', code):
+                        logger.warning(f"Incomplete code in {file_name}; retrying")
+                        return self.call_azure_openai(prompt)
+            return converted
 
     def create_csproj_file(self, project_name: str) -> str:
         logger.debug(f"Creating csproj file for {project_name}")
@@ -746,7 +730,6 @@ public class Worker : BackgroundService
             {{
                 _logger.LogInformation("Worker running at: {{time}}", DateTimeOffset.Now);
                 await _moduleService.ExecuteMainLogicAsync();
-                // Example: Initialize DEM900 communication
                 _dem900.Get_DEM900_Info();
                 await Task.Delay(1000, stoppingToken);
             }}
@@ -817,8 +800,6 @@ def health():
     logger.info("Health check endpoint accessed")
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
-
-
 @app.post("/convert")
 async def convert_vb6_project(
     file: UploadFile = File(None),
@@ -830,7 +811,6 @@ async def convert_vb6_project(
     )
     start_time = time.time()
 
-    # Validation
     if not ((file and file.filename and file.filename.endswith(".zip")) or github_url):
         logger.error("No valid input provided (ZIP file or GitHub URL required)")
         raise HTTPException(
@@ -852,7 +832,6 @@ async def convert_vb6_project(
         output_dir.mkdir()
         logger.debug(f"Created temporary directories: {temp_dir}")
 
-        # Extract/Clone input
         if file and file.filename and file.filename.endswith(".zip"):
             zip_path = Path(temp_dir) / file.filename
             with open(zip_path, "wb") as f:
@@ -861,7 +840,6 @@ async def convert_vb6_project(
                     raise HTTPException(status_code=400, detail="Uploaded file is empty")
                 f.write(content)
             logger.debug(f"Saved uploaded ZIP file to {zip_path}")
-
             try:
                 with zipfile.ZipFile(zip_path, "r") as zf:
                     zf.extractall(input_dir)
@@ -871,11 +849,9 @@ async def convert_vb6_project(
             project_name = Path(file.filename).stem
 
         elif github_url:
-            # Only allow github.com for safety
             if "github.com" not in github_url.lower():
                 logger.error("Only GitHub URLs are accepted.")
                 raise HTTPException(status_code=400, detail="Only GitHub URLs are accepted.")
-
             try:
                 repo_dir = str(input_dir)
                 logger.info(f"Cloning GitHub repo: {github_url}")
@@ -885,8 +861,6 @@ async def convert_vb6_project(
                 logger.error(f"GitHub clone failed: {e}")
                 raise HTTPException(status_code=500, detail=f"Error cloning GitHub repo: {e}")
             logger.debug(f"Cloned GitHub repository to {repo_dir}")
-
-            # Set project name from repo URL
             project_name = Path(github_url.rstrip("/").split("/")[-1]).stem
 
         else:
@@ -895,7 +869,6 @@ async def convert_vb6_project(
                 status_code=400, detail="No valid input provided"
             )
 
-        # Clean project name if necessary
         if not project_name.replace("_", "").replace("-", "").isalnum():
             project_name = "MyWorkerService"
         logger.info(f"Using project name: {project_name}")
@@ -912,11 +885,9 @@ async def convert_vb6_project(
         for vb_path in input_dir.rglob("*"):
             if not vb_path.is_file():
                 continue
-
             ext = vb_path.suffix.lower()
             if ext not in [".bas", ".cls"]:
                 continue
-
             try:
                 content = vb_path.read_text(encoding="utf-8", errors="ignore")
                 logger.debug(
@@ -926,17 +897,14 @@ async def convert_vb6_project(
                     logger.warning(f"Skipping empty file: {vb_path.name}")
                     failed_files.append(f"{vb_path.name} (empty)")
                     continue
-
                 if len(content) > 10000:
                     large_files.append(f"{vb_path.name} ({len(content.splitlines())} lines)")
-
             except Exception as e:
                 logger.error(f"Error reading {vb_path.name}: {e}")
                 failed_files.append(f"{vb_path.name} (read error)")
                 continue
 
             base = vb_path.stem
-
             if ext == ".bas":
                 logger.info(f"Processing BAS file: {vb_path.name}")
                 converted = converter.convert_bas_file(content, vb_path.name, namespace)
@@ -944,7 +912,6 @@ async def convert_vb6_project(
                     logger.warning(f"BAS conversion failed for {vb_path.name}: {converted['error']}")
                     failed_files.append(f"{vb_path.name} (conversion failed)")
                     continue
-
                 for file_name, code in converted.items():
                     if file_name.endswith(".cs") and code:
                         sanitized_code = converter.sanitize_code(str(code))
@@ -953,6 +920,7 @@ async def convert_vb6_project(
                             output_path.write_text(sanitized_code, encoding="utf-8")
                             logger.debug(f"Wrote {file_name} to Services")
                 successful_files.append(vb_path.name)
+                logger.info(f"Converted {vb_path.name} to {list(converted.keys())}")
 
             elif ext == ".cls":
                 logger.info(f"Processing CLS file: {vb_path.name}")
@@ -962,7 +930,6 @@ async def convert_vb6_project(
                     logger.warning(f"CLS conversion failed for {vb_path.name}: {converted['error']}")
                     failed_files.append(f"{vb_path.name} (conversion failed)")
                     continue
-
                 for file_name, code in converted.items():
                     if file_name.endswith(".cs") and code:
                         sanitized_code = converter.sanitize_code(str(code))
@@ -972,9 +939,43 @@ async def convert_vb6_project(
                             output_path.write_text(sanitized_code, encoding="utf-8")
                             logger.debug(f"Wrote {base}.cs to {target_dir}")
                 successful_files.append(vb_path.name)
-                logger.info(f"Classified and saved {vb_path.name} as {purpose}")
+                logger.info(f"Classified and saved {vb_path.name} as {purpose}; converted to {list(converted.keys())}")
 
-        # Boilerplate files
+        # Check for main files
+        expected_mains = ["MainModule.bas", "MainClass.cls", "Main.bas", "Main.cls"]
+        missing_mains = [f for f in expected_mains if f not in successful_files and f not in failed_files]
+        if missing_mains:
+            logger.warning(f"Missing main files: {missing_mains}; checking for existence")
+            for missing in missing_mains:
+                vb_path = next(input_dir.rglob(missing), None)
+                if vb_path and vb_path.is_file():
+                    try:
+                        content = vb_path.read_text(encoding="utf-8", errors="ignore")
+                        if content.strip():
+                            logger.info(f"Retrying conversion for {missing}")
+                            ext = vb_path.suffix.lower()
+                            base = vb_path.stem
+                            converted = converter.convert_bas_file(content, missing, namespace) if ext == ".bas" else converter.convert_cls_file(content, missing, namespace)
+                            if "error" in converted:
+                                logger.warning(f"Retry failed for {missing}: {converted['error']}")
+                                failed_files.append(f"{missing} (retry failed)")
+                                continue
+                            for file_name, code in converted.items():
+                                if file_name.endswith(".cs") and code:
+                                    sanitized_code = converter.sanitize_code(str(code))
+                                    if sanitized_code:
+                                        target_dir = "Services" if ext == ".bas" else ("Models" if converter.classify_cls_purpose(content) == "model" else "Services")
+                                        output_path = project_root / target_dir / (f"{base}.cs" if ext == ".cls" else file_name)
+                                        output_path.write_text(sanitized_code, encoding="utf-8")
+                                        logger.debug(f"Wrote {file_name if ext == '.bas' else base + '.cs'} to {target_dir}")
+                            successful_files.append(missing)
+                            logger.info(f"Retry successful for {missing}; converted to {list(converted.keys())}")
+                    except Exception as e:
+                        logger.error(f"Retry error for {missing}: {e}")
+                        failed_files.append(f"{missing} (retry error)")
+        if missing_mains:
+            logger.info(f"Missing main files after retry: {missing_mains}")
+
         (project_root / f"{project_name}.csproj").write_text(converter.create_csproj_file(project_name))
         (project_root / "Program.cs").write_text(converter.create_program_cs(project_name, namespace))
         (project_root / "Worker.cs").write_text(converter.create_worker_cs(project_name, namespace))
@@ -1004,6 +1005,9 @@ public static class Constants
 ## Failed Files
 {'\n'.join([f"- {file}" for file in failed_files]) if failed_files else "None"}
 
+## Missing Main Files
+{'\n'.join([f"- {file}" for file in missing_mains]) if missing_mains else "None"}
+
 ## Notes
 This project was automatically converted from VB6 to C# .NET 9, with support for J2534 API integration.
 Large files were processed in chunks and reassembled.
@@ -1026,7 +1030,6 @@ dotnet run
         (project_root / "README.md").write_text(readme_content, encoding="utf-8")
         logger.debug("Generated boilerplate files and README")
 
-        # Zip the output
         output_zip = Path(temp_dir) / f"{project_name}_converted.zip"
         try:
             with zipfile.ZipFile(output_zip, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -1049,6 +1052,7 @@ dotnet run
             "failed_files": failed_files,
             "large_files_processed": large_files,
             "total_files_processed": len(successful_files) + len(failed_files),
+            "missing_main_files": missing_mains,
             "conversion_summary": {
                 "total_files": len(successful_files) + len(failed_files),
                 "successful": len(successful_files),
@@ -1063,6 +1067,11 @@ dotnet run
             )
         if large_files:
             response_data["info"] = f"Large files were chunked and processed: {len(large_files)} files"
+        if missing_mains:
+            response_data["warning"] = (
+                response_data.get("warning", "") + f" Missing main files: {', '.join(missing_mains[:3])}"
+                + ("..." if len(missing_mains) > 3 else "")
+            )
 
         elapsed = round(time.time() - start_time, 2)
         logger.info(f"Total conversion time: {elapsed} seconds")
