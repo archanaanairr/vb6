@@ -65,7 +65,7 @@ Focus on:
 1. Convert global variables to static properties in a Constants/GlobalVariables class
 2. Convert functions/subroutines to static methods in service classes
 3. Convert VB6-specific data types to C# equivalents (e.g., Long to uint, Byte to byte)
-4. Convert error handling to try-catch, but DO NOT re-throw exceptions in catch blocks. Instead, log the error (optional) and return an appropriate default value (e.g., "" for string functions, null for objects, false for bools, or just return for void). Only re-throw if the original VB6 code uses Err.Raise.
+4. Convert error handling to try-catch only where the original VB6 code actually contains error handling (e.g., On Error GoTo, On Error Resume Next, Err.Number, Err.Description, or Err.Raise).Do NOT wrap every method or block in a try-catch unnecessarily.For methods without explicit error handling in VB6, do not add try-catch — preserve normal flow.In converted try-catch blocks:Do not rethrow exceptions unless the original VB6 uses Err.Raise.If not rethrowing, log the error (optional) and return an appropriate default value ("" for string functions, null for objects, false for bools, or return for void).Ensure that try-catch placement matches the original scope of error handling (e.g., around specific risky calls, not the whole method unless VB6 had method-wide error handling).
 5. Update file I/O to modern .NET (System.IO)
 6. Convert COM objects to .NET equivalents or P/Invoke for Windows API
 7. Handle J2534 API calls with proper [DllImport] attributes
@@ -77,6 +77,16 @@ Focus on:
 13. If a name conflict is detected (e.g., same name for class and struct), rename the secondary type (e.g., EcuGroup_Struct) and comment: '// Renamed to avoid conflict with original class'.
 14. In the output JSON, ensure no duplicate type definitions across files.
 15. ALWAYS generate FULL method bodies based on VB6 code; do not leave empty or use placeholders unless the original VB6 has no body. Infer logic if truncated.
+16. Define all fields, constants, and variables referenced or used in initialization, switch/case logic, method bodies, file-level assignments, or any control logic. Ensure that any symbol (global variable, constant, etc.) used is declared as a property or field in the appropriate output class (such as Constants/GlobalVariables), and all referenced values are explicitly defined.
+17. Only implement IDisposable and Dispose() in service classes if resource management is explicitly required by the original VB6 code. Otherwise, OMIT IDisposable and Dispose() from output.
+18. DO NOT generate any class, struct, or enum if the same type name already exists in another file in the same namespace/folder. 
+    - If the type is needed but already defined, refer to it directly: DO NOT redeclare it (even as a stub).
+    - This avoids compiler errors and redundant code. Only generate new types that are unique to this VB6 file.
+    - If a method or property relies on an external class, assume that class exists in the namespace—DO NOT generate it here.
+    - Do not add 'using' directives for types already within the same namespace/folder—they are automatically in scope.
+19. Scan the VB6 code for global/module-level variables and ensure they are converted to appropriate static properties or fields in a dedicated C# class (e.g., Constants, Globals, or the main service class). If a variable is referenced both inside and outside a method (or if its lifetime in VB6 is beyond a single method), ensure it is declared at the class/static level in C#. This prevents loss of global/module-level state in conversion.
+
+
 
 VB6 Code:
 {vb6_code}
@@ -98,7 +108,7 @@ Focus on:
 3. Convert events to C# events or delegates
 4. Convert VB6 data types to C# equivalents (e.g., Long to uint, Byte to byte)
 5. If VB6 Class_Initialize or setup code exists, handle initialization in a C# constructor. If no custom initialization is needed, omit the constructor.
-6. Convert error handling to try-catch, but DO NOT re-throw exceptions in catch blocks. Instead, log the error (optional) and return an appropriate default value (e.g., "" for string functions, null for objects, false for bools, or just return for void). Only re-throw if the original VB6 code uses Err.Raise.
+6. Convert error handling to try-catch only where the original VB6 code actually contains error handling (e.g., On Error GoTo, On Error Resume Next, Err.Number, Err.Description, or Err.Raise).Do NOT wrap every method or block in a try-catch unnecessarily.For methods without explicit error handling in VB6, do not add try-catch — preserve normal flow.In converted try-catch blocks:Do not rethrow exceptions unless the original VB6 uses Err.Raise.If not rethrowing, log the error (optional) and return an appropriate default value ("" for string functions, null for objects, false for bools, or return for void).Ensure that try-catch placement matches the original scope of error handling (e.g., around specific risky calls, not the whole method unless VB6 had method-wide error handling).
 7. Only implement IDisposable and Dispose() if resource management is required by the original VB6 class. Otherwise, OMIT IDisposable and Dispose().
 8. Handle J2534 API calls with proper [DllImport] attributes and structs (e.g., RX_structure, vciSCONFIG)
 9. Convert 'Select Case' to 'switch' in C#, handling ranges with multiple cases or if-else if needed.
@@ -109,6 +119,12 @@ Focus on:
 14. If a name conflict is detected (e.g., same name for class and struct), rename the secondary type (e.g., EcuGroup_Struct) and comment: '// Renamed to avoid conflict with original class'.
 15. In the output JSON, ensure no duplicate type definitions across files.
 16. ALWAYS generate FULL method bodies based on VB6 code; do not leave empty or use placeholders unless the original VB6 has no body. Infer logic if truncated.
+17. DO NOT generate any class, struct, or enum if the same type name already exists in another file in the same namespace/folder. 
+    - If the type is needed but already defined, refer to it directly: DO NOT redeclare it (even as a stub).
+    - This avoids compiler errors and redundant code. Only generate new types that are unique to this VB6 file.
+    - If a method or property relies on an external class, assume that class exists in the namespace—DO NOT generate it here.
+    - Do not add 'using' directives for types already within the same namespace/folder—they are automatically in scope.
+18. Scan the VB6 code for global/module-level variables and ensure they are converted to appropriate static properties or fields in a dedicated C# class (e.g., Constants, Globals, or the main service class). If a variable is referenced both inside and outside a method (or if its lifetime in VB6 is beyond a single method), ensure it is declared at the class/static level in C#. This prevents loss of global/module-level state in conversion.
 
 VB6 Code:
 {vb6_code}
@@ -130,7 +146,7 @@ Focus on:
 4. Convert VB6 data types to C# equivalents (e.g., Long to uint, Byte to byte)
 5. Handle J2534 API calls with [DllImport] and structs (e.g., RX_structure, vciSCONFIG)
 6. Use [StructLayout] and [MarshalAs] for P/Invoke structs
-7. Convert error handling to try-catch, but DO NOT re-throw exceptions in catch blocks. Instead, log the error (optional) and return an appropriate default value (e.g., "" for string functions, null for objects, false for bools, or just return for void). Only re-throw if the original VB6 code uses Err.Raise.
+7. Convert error handling to try-catch only where the original VB6 code actually contains error handling (e.g., On Error GoTo, On Error Resume Next, Err.Number, Err.Description, or Err.Raise).Do NOT wrap every method or block in a try-catch unnecessarily.For methods without explicit error handling in VB6, do not add try-catch — preserve normal flow.In converted try-catch blocks:Do not rethrow exceptions unless the original VB6 uses Err.Raise.If not rethrowing, log the error (optional) and return an appropriate default value ("" for string functions, null for objects, false for bools, or return for void).Ensure that try-catch placement matches the original scope of error handling (e.g., around specific risky calls, not the whole method unless VB6 had method-wide error handling).
 8. Preserve method boundaries and context
 9. Handle arrays and memory management for P/Invoke (e.g., Marshal.AllocHGlobal, Marshal.FreeHGlobal)
 10. Convert 'Select Case' to 'switch' in C#, handling ranges with multiple cases or if-else if needed.
@@ -141,6 +157,15 @@ Focus on:
 15. If a name conflict is detected (e.g., same name for class and struct), rename the secondary type (e.g., EcuGroup_Struct) and comment: '// Renamed to avoid conflict with original class'.
 16. In the output JSON, ensure no duplicate type definitions across files.
 17. ALWAYS generate FULL method bodies based on VB6 code; do not leave empty or use placeholders unless the original VB6 has no body. Infer logic if truncated.
+18. Define all fields, constants, and variables used in initialization logic, switch/case statements, constructors, and any assignment blocks. Ensure that any symbol referenced in control logic (such as in Select Case or switch) is declared as a field or included as a constructor parameter, and that all referenced constants are explicitly defined.
+19. Only implement IDisposable and Dispose() if resource management is explicitly required by the original VB6 definition. Otherwise, OMIT IDisposable and Dispose() from the output.
+20. DO NOT generate any class, struct, or enum if the same type name already exists in another file in the same namespace/folder. 
+    - If the type is needed but already defined, refer to it directly: DO NOT redeclare it (even as a stub).
+    - This avoids compiler errors and redundant code. Only generate new types that are unique to this VB6 file.
+    - If a method or property relies on an external class, assume that class exists in the namespace—DO NOT generate it here.
+    - Do not add 'using' directives for types already within the same namespace/folder—they are automatically in scope.
+21. Scan the VB6 code for global/module-level variables and ensure they are converted to appropriate static properties or fields in a dedicated C# class (e.g., Constants, Globals, or the main service class). If a variable is referenced both inside and outside a method (or if its lifetime in VB6 is beyond a single method), ensure it is declared at the class/static level in C#. This prevents loss of global/module-level state in conversion.
+
 Previous context summary: {previous_context}
 VB6 Code Chunk:
 {vb6_code}
@@ -170,6 +195,11 @@ Focus on:
 12. If a name conflict is detected (e.g., same name for class and struct), rename the secondary type (e.g., EcuGroup_Struct) and comment: '// Renamed to avoid conflict with original class'.
 13. In the output JSON, ensure no duplicate type definitions across files.
 14. ALWAYS generate FULL method bodies based on VB6 code; do not leave empty or use placeholders unless the original VB6 has no body. Infer logic if truncated.
+15. DO NOT generate any class, struct, or enum if the same type name already exists in another file in the same namespace/folder. 
+    - If the type is needed but already defined, refer to it directly: DO NOT redeclare it (even as a stub).
+    - This avoids compiler errors and redundant code. Only generate new types that are unique to this VB6 file.
+    - If a method or property relies on an external class, assume that class exists in the namespace—DO NOT generate it here.
+    - Do not add 'using' directives for types already within the same namespace/folder—they are automatically in scope.
 Previous context summary: {previous_context}
 VB6 Code Chunk:
 {vb6_code}
@@ -594,7 +624,7 @@ Ensure:
 11. If conflicts remain (e.g., class and enum with same name), remove the inferred one (prefer original class) or rename as '_Struct'/'_Enum'.
 12. Ensure every method in ModuleService.cs has a full body; if empty, add '// TODO: Implement based on VB6 logic' but prefer inferring from chunks.
 13. Scan all chunks for method bodies and ensure they are included in the final service class.
-
+14. Scan the VB6 code for global/module-level variables and ensure they are converted to appropriate static properties or fields in a dedicated C# class (e.g., Constants, Globals, or the main service class). If a variable is referenced both inside and outside a method (or if its lifetime in VB6 is beyond a single method), ensure it is declared at the class/static level in C#. This prevents loss of global/module-level state in conversion.
 Chunks:
 {'\n'.join([f"--- Chunk {i+1} ---\n{json.dumps(chunk, indent=2)}" for i, chunk in enumerate(chunks)])}
 
@@ -780,6 +810,7 @@ public class Worker : BackgroundService
         }, indent=2)
 
 app = FastAPI(title="VB6 → .NET 9 Worker Converter", version="2.1.2")
+
 converter = VB6Converter()
 
 @app.get("/")
