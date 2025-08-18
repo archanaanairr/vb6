@@ -65,7 +65,7 @@ Focus on:
 1. Convert global variables to static properties in a Constants/GlobalVariables class
 2. Convert functions/subroutines to static methods in service classes
 3. Convert VB6-specific data types to C# equivalents (e.g., Long to uint, Byte to byte)
-4. Convert error handling to try-catch only where the original VB6 code actually contains error handling (e.g., On Error GoTo, On Error Resume Next, Err.Number, Err.Description, or Err.Raise).Do NOT wrap every method or block in a try-catch unnecessarily.For methods without explicit error handling in VB6, do not add try-catch — preserve normal flow.In converted try-catch blocks:Do not rethrow exceptions unless the original VB6 uses Err.Raise.If not rethrowing, log the error (optional) and return an appropriate default value ("" for string functions, null for objects, false for bools, or return for void).Ensure that try-catch placement matches the original scope of error handling (e.g., around specific risky calls, not the whole method unless VB6 had method-wide error handling).
+4. Convert error handling to try-catch only where the original VB6 code actually contains error handling (e.g., On Error GoTo, On Error Resume Next, Err.Number, Err.Description, or Err.Raise). Do NOT wrap every method or block in a try-catch unnecessarily. For methods without explicit error handling in VB6, do not add try-catch — preserve normal flow. In converted try-catch blocks: Do not rethrow exceptions unless the original VB6 uses Err.Raise. If not rethrowing, log the error (optional) and return an appropriate default value ("" for string functions, null for objects, false for bools, or return for void). Ensure that try-catch placement matches the original scope of error handling (e.g., around specific risky calls, not the whole method unless VB6 had method-wide error handling).
 5. Update file I/O to modern .NET (System.IO)
 6. Convert COM objects to .NET equivalents or P/Invoke for Windows API
 7. Handle J2534 API calls with proper [DllImport] attributes
@@ -80,13 +80,8 @@ Focus on:
 16. Define all fields, constants, and variables referenced or used in initialization, switch/case logic, method bodies, file-level assignments, or any control logic. Ensure that any symbol (global variable, constant, etc.) used is declared as a property or field in the appropriate output class (such as Constants/GlobalVariables), and all referenced values are explicitly defined.
 17. Only implement IDisposable and Dispose() in service classes if resource management is explicitly required by the original VB6 code. Otherwise, OMIT IDisposable and Dispose() from output.
 18. DO NOT generate any class, struct, or enum if the same type name already exists in another file in the same namespace/folder. 
-    - If the type is needed but already defined, refer to it directly: DO NOT redeclare it (even as a stub).
-    - This avoids compiler errors and redundant code. Only generate new types that are unique to this VB6 file.
-    - If a method or property relies on an external class, assume that class exists in the namespace—DO NOT generate it here.
-    - Do not add 'using' directives for types already within the same namespace/folder—they are automatically in scope.
 19. Scan the VB6 code for global/module-level variables and ensure they are converted to appropriate static properties or fields in a dedicated C# class (e.g., Constants, Globals, or the main service class). If a variable is referenced both inside and outside a method (or if its lifetime in VB6 is beyond a single method), ensure it is declared at the class/static level in C#. This prevents loss of global/module-level state in conversion.
-
-
+20. Track method references across files: If a method calls another method or class (e.g., MainClass or clsDEM900), assume it exists in the namespace and reference it without redeclaring. Include necessary 'using' directives for external types.
 
 VB6 Code:
 {vb6_code}
@@ -108,7 +103,7 @@ Focus on:
 3. Convert events to C# events or delegates
 4. Convert VB6 data types to C# equivalents (e.g., Long to uint, Byte to byte)
 5. If VB6 Class_Initialize or setup code exists, handle initialization in a C# constructor. If no custom initialization is needed, omit the constructor.
-6. Convert error handling to try-catch only where the original VB6 code actually contains error handling (e.g., On Error GoTo, On Error Resume Next, Err.Number, Err.Description, or Err.Raise).Do NOT wrap every method or block in a try-catch unnecessarily.For methods without explicit error handling in VB6, do not add try-catch — preserve normal flow.In converted try-catch blocks:Do not rethrow exceptions unless the original VB6 uses Err.Raise.If not rethrowing, log the error (optional) and return an appropriate default value ("" for string functions, null for objects, false for bools, or return for void).Ensure that try-catch placement matches the original scope of error handling (e.g., around specific risky calls, not the whole method unless VB6 had method-wide error handling).
+6. Convert error handling to try-catch only where the original VB6 code actually contains error handling (e.g., On Error GoTo, On Error Resume Next, Err.Number, Err.Description, or Err.Raise). Do NOT wrap every method or block in a try-catch unnecessarily. For methods without explicit error handling in VB6, do not add try-catch — preserve normal flow. In converted try-catch blocks: Do not rethrow exceptions unless the original VB6 uses Err.Raise. If not rethrowing, log the error (optional) and return an appropriate default value ("" for string functions, null for objects, false for bools, or return for void). Ensure that try-catch placement matches the original scope of error handling (e.g., around specific risky calls, not the whole method unless VB6 had method-wide error handling).
 7. Only implement IDisposable and Dispose() if resource management is required by the original VB6 class. Otherwise, OMIT IDisposable and Dispose().
 8. Handle J2534 API calls with proper [DllImport] attributes and structs (e.g., RX_structure, vciSCONFIG)
 9. Convert 'Select Case' to 'switch' in C#, handling ranges with multiple cases or if-else if needed.
@@ -120,11 +115,8 @@ Focus on:
 15. In the output JSON, ensure no duplicate type definitions across files.
 16. ALWAYS generate FULL method bodies based on VB6 code; do not leave empty or use placeholders unless the original VB6 has no body. Infer logic if truncated.
 17. DO NOT generate any class, struct, or enum if the same type name already exists in another file in the same namespace/folder. 
-    - If the type is needed but already defined, refer to it directly: DO NOT redeclare it (even as a stub).
-    - This avoids compiler errors and redundant code. Only generate new types that are unique to this VB6 file.
-    - If a method or property relies on an external class, assume that class exists in the namespace—DO NOT generate it here.
-    - Do not add 'using' directives for types already within the same namespace/folder—they are automatically in scope.
 18. Scan the VB6 code for global/module-level variables and ensure they are converted to appropriate static properties or fields in a dedicated C# class (e.g., Constants, Globals, or the main service class). If a variable is referenced both inside and outside a method (or if its lifetime in VB6 is beyond a single method), ensure it is declared at the class/static level in C#. This prevents loss of global/module-level state in conversion.
+19. Track method references across files: If a method calls another method or class (e.g., MainModule or clsDEM900), assume it exists in the namespace and reference it without redeclaring. Include necessary 'using' directives for external types.
 
 VB6 Code:
 {vb6_code}
@@ -146,7 +138,7 @@ Focus on:
 4. Convert VB6 data types to C# equivalents (e.g., Long to uint, Byte to byte)
 5. Handle J2534 API calls with [DllImport] and structs (e.g., RX_structure, vciSCONFIG)
 6. Use [StructLayout] and [MarshalAs] for P/Invoke structs
-7. Convert error handling to try-catch only where the original VB6 code actually contains error handling (e.g., On Error GoTo, On Error Resume Next, Err.Number, Err.Description, or Err.Raise).Do NOT wrap every method or block in a try-catch unnecessarily.For methods without explicit error handling in VB6, do not add try-catch — preserve normal flow.In converted try-catch blocks:Do not rethrow exceptions unless the original VB6 uses Err.Raise.If not rethrowing, log the error (optional) and return an appropriate default value ("" for string functions, null for objects, false for bools, or return for void).Ensure that try-catch placement matches the original scope of error handling (e.g., around specific risky calls, not the whole method unless VB6 had method-wide error handling).
+7. Convert error handling to try-catch only where the original VB6 code actually contains error handling (e.g., On Error GoTo, On Error Resume Next, Err.Number, Err.Description, or Err.Raise). Do NOT wrap every method or block in a try-catch unnecessarily. For methods without explicit error handling in VB6, do not add try-catch — preserve normal flow. In converted try-catch blocks: Do not rethrow exceptions unless the original VB6 uses Err.Raise. If not rethrowing, log the error (optional) and return an appropriate default value ("" for string functions, null for objects, false for bools, or return for void). Ensure that try-catch placement matches the original scope of error handling (e.g., around specific risky calls, not the whole method unless VB6 had method-wide error handling).
 8. Preserve method boundaries and context
 9. Handle arrays and memory management for P/Invoke (e.g., Marshal.AllocHGlobal, Marshal.FreeHGlobal)
 10. Convert 'Select Case' to 'switch' in C#, handling ranges with multiple cases or if-else if needed.
@@ -160,11 +152,8 @@ Focus on:
 18. Define all fields, constants, and variables used in initialization logic, switch/case statements, constructors, and any assignment blocks. Ensure that any symbol referenced in control logic (such as in Select Case or switch) is declared as a field or included as a constructor parameter, and that all referenced constants are explicitly defined.
 19. Only implement IDisposable and Dispose() if resource management is explicitly required by the original VB6 definition. Otherwise, OMIT IDisposable and Dispose() from the output.
 20. DO NOT generate any class, struct, or enum if the same type name already exists in another file in the same namespace/folder. 
-    - If the type is needed but already defined, refer to it directly: DO NOT redeclare it (even as a stub).
-    - This avoids compiler errors and redundant code. Only generate new types that are unique to this VB6 file.
-    - If a method or property relies on an external class, assume that class exists in the namespace—DO NOT generate it here.
-    - Do not add 'using' directives for types already within the same namespace/folder—they are automatically in scope.
 21. Scan the VB6 code for global/module-level variables and ensure they are converted to appropriate static properties or fields in a dedicated C# class (e.g., Constants, Globals, or the main service class). If a variable is referenced both inside and outside a method (or if its lifetime in VB6 is beyond a single method), ensure it is declared at the class/static level in C#. This prevents loss of global/module-level state in conversion.
+22. Track method references across files: If a method calls another method or class (e.g., MainModule or clsDEM900), assume it exists in the namespace and reference it without redeclaring. Include necessary 'using' directives for external types.
 
 Previous context summary: {previous_context}
 VB6 Code Chunk:
@@ -173,7 +162,7 @@ VB6 Code Chunk:
 Return JSON structure:
 {{
   "ClassChunk.cs": "converted C# code chunk",
-  "ContextSummary": "brief context for next chunk including class structure, defined methods, structs, and J2534 API calls"
+  "ContextSummary": "brief context for next chunk including class structure, defined methods, structs, J2534 API calls, and method references"
 }}
 """,
             'chunk_converter': """
@@ -196,10 +185,7 @@ Focus on:
 13. In the output JSON, ensure no duplicate type definitions across files.
 14. ALWAYS generate FULL method bodies based on VB6 code; do not leave empty or use placeholders unless the original VB6 has no body. Infer logic if truncated.
 15. DO NOT generate any class, struct, or enum if the same type name already exists in another file in the same namespace/folder. 
-    - If the type is needed but already defined, refer to it directly: DO NOT redeclare it (even as a stub).
-    - This avoids compiler errors and redundant code. Only generate new types that are unique to this VB6 file.
-    - If a method or property relies on an external class, assume that class exists in the namespace—DO NOT generate it here.
-    - Do not add 'using' directives for types already within the same namespace/folder—they are automatically in scope.
+16. Track method references across files: If a method calls another method or class (e.g., MainClass or clsDEM900), assume it exists in the namespace and reference it without redeclaring. Include necessary 'using' directives for external types.
 Previous context summary: {previous_context}
 VB6 Code Chunk:
 {vb6_code}
@@ -207,10 +193,15 @@ VB6 Code Chunk:
 Return JSON structure:
 {{
   "Chunk.cs": "converted C# code",
-  "ContextSummary": "brief context for next chunk including defined methods and variables"
+  "ContextSummary": "brief context for next chunk including defined methods, variables, and method references"
 }}
 """
         }
+
+    def _indent_code(self, code: str, spaces: int) -> str:
+        """Indent code with the specified number of spaces."""
+        indent = " " * spaces
+        return "\n".join(indent + line if line.strip() else line for line in code.splitlines())
 
     def chunk_large_file(self, content: str, max_chunk_size: int = 6000, file_type: str = "bas") -> List[str]:
         logger.debug(f"Chunking {file_type} file with size {len(content)}")
@@ -218,6 +209,7 @@ Return JSON structure:
         chunks = []
         current_chunk = []
         current_size = 0
+        dependencies = []  # Track method and variable references
 
         if file_type == "cls":
             in_method = False
@@ -231,6 +223,20 @@ Return JSON structure:
 
             for line in lines:
                 line_stripped = line.strip()
+                # Track method declarations
+                for keyword in method_start_keywords:
+                    if keyword in line_stripped:
+                        method_name = line_stripped.split(keyword)[-1].split('(')[0].strip()
+                        dependencies.append(f"Method: {method_name}")
+                # Track variable declarations
+                if line_stripped.startswith(('Public ', 'Private ', 'Dim ')) and ' As ' in line_stripped:
+                    var_name = line_stripped.split(' As ')[0].split()[-1]
+                    dependencies.append(f"Variable: {var_name}")
+                # Track DLL imports
+                if any(keyword in line_stripped for keyword in declare_keywords):
+                    dll_match = re.search(r'Lib\s+"([^"]+)"', line_stripped)
+                    if dll_match:
+                        dependencies.append(f"DLL: {dll_match.group(1)}")
 
                 if any(keyword in line for keyword in struct_start_keywords):
                     if current_size + len(line) > max_chunk_size and current_chunk and not in_method:
@@ -297,6 +303,21 @@ Return JSON structure:
             declare_keywords = ['Declare Function', 'Declare Sub']
             for line in lines:
                 line_stripped = line.strip()
+                # Track method declarations
+                for keyword in method_start_keywords:
+                    if keyword in line_stripped:
+                        method_name = line_stripped.split(keyword)[-1].split('(')[0].strip()
+                        dependencies.append(f"Method: {method_name}")
+                # Track variable declarations
+                if line_stripped.startswith(('Public ', 'Private ', 'Dim ')) and ' As ' in line_stripped:
+                    var_name = line_stripped.split(' As ')[0].split()[-1]
+                    dependencies.append(f"Variable: {var_name}")
+                # Track DLL imports
+                if any(keyword in line_stripped for keyword in declare_keywords):
+                    dll_match = re.search(r'Lib\s+"([^"]+)"', line_stripped)
+                    if dll_match:
+                        dependencies.append(f"DLL: {dll_match.group(1)}")
+
                 if any(keyword in line_stripped for keyword in declare_keywords):
                     if current_size + len(line) > max_chunk_size and current_chunk and not in_method:
                         chunks.append("\n".join(current_chunk))
@@ -334,8 +355,8 @@ Return JSON structure:
         if current_chunk:
             chunks.append("\n".join(current_chunk))
 
-        logger.debug(f"Created {len(chunks)} chunks for {file_type} file")
-        return chunks
+        logger.debug(f"Created {len(chunks)} chunks for {file_type} file with dependencies: {dependencies}")
+        return chunks, dependencies
 
     def merge_class_chunks_locally(
         self,
@@ -347,33 +368,37 @@ Return JSON structure:
         logger.info(f"Locally merging {len(chunks)} chunks for {filename}")
         chunk_bodies = []
         has_disposable = any("IDisposable" in chunk.get("ClassChunk.cs", "") for chunk in chunks)
+        usings = set()
+        methods = set()
+        structs = set()
         for chunk in chunks:
             class_chunk_code = chunk.get("ClassChunk.cs", "")
             if not class_chunk_code.strip():
+                logger.warning(f"Empty chunk in {filename}")
                 continue
+            # Extract usings, methods, and structs
+            usings.update(re.findall(r'using\s+([^;]+);', class_chunk_code))
+            methods.update(re.findall(r'public\s+\w+\s+(\w+)\s*\([^)]*\)', class_chunk_code))
+            structs.update(re.findall(r'public\s+struct\s+(\w+)\s*\{', class_chunk_code))
             body = re.sub(r'^using\s+[^\n]+;\n?', '', class_chunk_code, flags=re.MULTILINE)
             body = re.sub(r'^namespace\s+[^\{]+\{\s*', '', body, flags=re.MULTILINE)
             body = re.sub(r'^public\s+class\s+[^\{]+\{\s*', '', body, flags=re.MULTILINE)
             body = body.strip('} \n')
             chunk_bodies.append(body.strip())
         merged_body = "\n\n".join(chunk_bodies)
+        # Remove duplicate types
         types = re.findall(r'(public\s+(enum|struct|class)\s+\w+\s*\{[^}]*\})', merged_body, flags=re.DOTALL)
         unique_types = {t[0]: t for t in types}.values()
         for dup in types:
             if types.count(dup) > 1:
                 merged_body = merged_body.replace(dup[0], '', types.count(dup) - 1)
+        # Ensure full method bodies
         merged_body = re.sub(r'(\w+\s*\([^)]*\)\s*\{\s*\})', r'\1 // TODO: Implement body from original VB6', merged_body)
-        usings = set()
-        for chunk in chunks:
-            usings.update(re.findall(r'using\s+([^;]+);', chunk.get("ClassChunk.cs", "")))
         using_str = "\n".join(sorted(f"using {u};" for u in usings if u))
         inheritance = ": IDisposable" if has_disposable else ""
+        context_summary = f"Class: {class_name}, Methods: {', '.join(methods)}, Structs: {', '.join(structs)}"
         full_code = f"{using_str}\n\nnamespace {namespace}\n{{\n    public class {class_name} {inheritance}\n    {{\n{self._indent_code(merged_body, 8)}\n    }}\n}}\n"
-        return {"Class.cs": full_code}
-
-    def _indent_code(self, code, spaces):
-        indent = " " * spaces
-        return "\n".join(indent + line if line.strip() else "" for line in code.splitlines())
+        return {"Class.cs": full_code, "ContextSummary": context_summary}
 
     def extract_class_name(self, content: str) -> str:
         lines = content.split('\n')
@@ -488,6 +513,7 @@ Return JSON structure:
                                 "Avoid any name conflicts: Ensure no duplicate type names (e.g., no class and enum/struct with the same name like EcuGroup or DataElement). "
                                 "If a potential conflict arises, rename the conflicting type with a suffix like '_Struct' and add a comment explaining the rename."
                                 "Ensure ALL methods have full bodies; infer logic from VB6 code or context if needed, but do not leave empty methods unless VB6 explicitly has no body."
+                                "Track method and class references: If a method calls another method or class (e.g., MainModule, MainClass, or clsDEM900), assume it exists in the namespace and reference it without redeclaring."
                             )
                         },
                         {"role": "user", "content": prompt}
@@ -544,22 +570,20 @@ Return JSON structure:
     def convert_chunks_sequential(
         self,
         chunks: List[str],
+        dependencies: List[str],
         prompt_template: str,
         prompt_vars_fn,
         max_tokens: int = 16000,
     ) -> List[Dict[str, Any]]:
-        """
-        Converts chunks sequentially, chaining ContextSummary from previous response.
-        """
         results = []
-        previous_context = ""
+        previous_context = f"Dependencies: {', '.join(dependencies)}"
         for i, chunk in enumerate(chunks):
             prompt_vars = prompt_vars_fn(i)
             prompt_vars["previous_context"] = previous_context
             prompt = prompt_template.format(**prompt_vars)
             response = self.call_azure_openai(prompt, max_tokens=max_tokens)
             if "error" not in response:
-                previous_context = response.get("ContextSummary", "")
+                previous_context = response.get("ContextSummary", f"Dependencies: {', '.join(dependencies)}")
             results.append(response)
         return results
 
@@ -569,9 +593,10 @@ Return JSON structure:
             return {"error": f"Empty content in {filename}"}
         if len(content) > 15000:
             logger.debug("File is large, processing in sequential chunks")
-            chunks = self.chunk_large_file(content, max_chunk_size=6000, file_type="bas")
+            chunks, dependencies = self.chunk_large_file(content, max_chunk_size=6000, file_type="bas")
             parts = self.convert_chunks_sequential(
                 chunks,
+                dependencies,
                 self.conversion_prompts['chunk_converter'],
                 lambda i: {
                     "chunk_number": i + 1,
@@ -625,6 +650,7 @@ Ensure:
 12. Ensure every method in ModuleService.cs has a full body; if empty, add '// TODO: Implement based on VB6 logic' but prefer inferring from chunks.
 13. Scan all chunks for method bodies and ensure they are included in the final service class.
 14. Scan the VB6 code for global/module-level variables and ensure they are converted to appropriate static properties or fields in a dedicated C# class (e.g., Constants, Globals, or the main service class). If a variable is referenced both inside and outside a method (or if its lifetime in VB6 is beyond a single method), ensure it is declared at the class/static level in C#. This prevents loss of global/module-level state in conversion.
+15. Track method references: If a method calls another method or class (e.g., MainClass or clsDEM900), assume it exists in the namespace and reference it without redeclaring. Include necessary 'using' directives for external types.
 Chunks:
 {'\n'.join([f"--- Chunk {i+1} ---\n{json.dumps(chunk, indent=2)}" for i, chunk in enumerate(chunks)])}
 
@@ -647,9 +673,11 @@ Return JSON structure:
         logger.debug(f"Classified {filename} as {purpose}")
         if len(content) > 12000:
             logger.debug("Class file is large, processing in sequential chunks")
-            chunks = self.chunk_large_file(content, max_chunk_size=6000, file_type="cls")
+            chunks, dependencies = self.chunk_large_file(content, max_chunk_size=6000, file_type="cls")
+            logger.debug(f"Dependencies for {filename}: {dependencies}")
             parts = self.convert_chunks_sequential(
                 chunks,
+                dependencies,
                 self.conversion_prompts['class_chunk_converter'],
                 lambda i: {
                     "chunk_number": i + 1,
@@ -682,6 +710,72 @@ Return JSON structure:
                         logger.warning(f"Incomplete code in {file_name}; retrying")
                         return self.call_azure_openai(prompt)
             return converted
+
+    def convert_main_files(self, input_dir: Path, namespace: str, project_name: str, output_dir: Path) -> Dict[str, Any]:
+        logger.info(f"Converting main files in {input_dir}")
+        main_files = ["MainModule.bas", "MainClass.cls", "Main.bas", "Main.cls"]
+        converted_files = {}
+        successful_files = []
+        failed_files = []
+        
+        for main_file in main_files:
+            vb_path = input_dir / main_file
+            if not vb_path.is_file():
+                continue
+            try:
+                content = vb_path.read_text(encoding="utf-8", errors="ignore")
+                if not content.strip():
+                    logger.warning(f"Skipping empty main file: {main_file}")
+                    failed_files.append(f"{main_file} (empty)")
+                    continue
+                
+                ext = vb_path.suffix.lower()
+                base = vb_path.stem
+                if ext == ".bas":
+                    converted = self.convert_bas_file(content, main_file, namespace)
+                    if "error" in converted:
+                        logger.warning(f"Main BAS conversion failed for {main_file}: {converted['error']}")
+                        failed_files.append(f"{main_file} (conversion failed)")
+                        continue
+                    for file_name, code in converted.items():
+                        if file_name.endswith(".cs") and code:
+                            sanitized_code = self.sanitize_code(str(code))
+                            if sanitized_code:
+                                output_path = output_dir / "Services" / file_name
+                                output_path.write_text(sanitized_code, encoding="utf-8")
+                                converted_files[file_name] = sanitized_code
+                                logger.debug(f"Wrote {file_name} to Services")
+                    successful_files.append(main_file)
+                    logger.info(f"Converted {main_file} to {list(converted.keys())}")
+                
+                elif ext == ".cls":
+                    purpose = self.classify_cls_purpose(content)
+                    converted = self.convert_cls_file(content, main_file, namespace)
+                    if "error" in converted:
+                        logger.warning(f"Main CLS conversion failed for {main_file}: {converted['error']}")
+                        failed_files.append(f"{main_file} (conversion failed)")
+                        continue
+                    for file_name, code in converted.items():
+                        if file_name.endswith(".cs") and code:
+                            sanitized_code = self.sanitize_code(str(code))
+                            if sanitized_code:
+                                target_dir = "Models" if purpose == "model" else "Services"
+                                output_path = output_dir / target_dir / f"{base}.cs"
+                                output_path.write_text(sanitized_code, encoding="utf-8")
+                                converted_files[f"{base}.cs"] = sanitized_code
+                                logger.debug(f"Wrote {base}.cs to {target_dir}")
+                    successful_files.append(main_file)
+                    logger.info(f"Classified and saved {main_file} as {purpose}; converted to {list(converted.keys())}")
+            
+            except Exception as e:
+                logger.error(f"Error processing main file {main_file}: {e}")
+                failed_files.append(f"{main_file} (processing error)")
+        
+        return {
+            "converted_files": converted_files,
+            "successful_files": successful_files,
+            "failed_files": failed_files
+        }
 
     def create_csproj_file(self, project_name: str) -> str:
         logger.debug(f"Creating csproj file for {project_name}")
@@ -716,6 +810,7 @@ using Serilog;
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddHostedService<Worker>();
 builder.Services.AddScoped<IModuleService, ModuleService>();
+builder.Services.AddSingleton<MainClass>();
 builder.Services.AddSingleton<clsDEM900>();
 builder.Services.AddLogging(logging => 
 {{
@@ -743,12 +838,14 @@ public class Worker : BackgroundService
 {{
     private readonly ILogger<Worker> _logger;
     private readonly IModuleService _moduleService;
+    private readonly MainClass _mainClass;
     private readonly clsDEM900 _dem900;
 
-    public Worker(ILogger<Worker> logger, IModuleService moduleService, clsDEM900 dem900)
+    public Worker(ILogger<Worker> logger, IModuleService moduleService, MainClass mainClass, clsDEM900 dem900)
     {{
         _logger = logger;
         _moduleService = moduleService;
+        _mainClass = mainClass;
         _dem900 = dem900;
     }}
 
@@ -760,6 +857,7 @@ public class Worker : BackgroundService
             {{
                 _logger.LogInformation("Worker running at: {{time}}", DateTimeOffset.Now);
                 await _moduleService.ExecuteMainLogicAsync();
+                _mainClass.Initialize();
                 _dem900.Get_DEM900_Info();
                 await Task.Delay(1000, stoppingToken);
             }}
@@ -809,7 +907,7 @@ public class Worker : BackgroundService
             }
         }, indent=2)
 
-app = FastAPI(title="VB6 → .NET 9 Worker Converter", version="2.1.2")
+app = FastAPI(title="VB6 → .NET 9 Worker Converter", version="2.1.4")
 
 converter = VB6Converter()
 
@@ -818,8 +916,8 @@ def root():
     logger.info("Root endpoint accessed")
     return {
         "message": "VB6 to .NET 9 Worker Service Converter",
-        "version": "2.1.2",
-        "features": ["Large file chunking", "Enhanced CLS support", "J2534 API integration", "Dynamic CLS classification"],
+        "version": "2.1.4",
+        "features": ["Large file chunking", "Enhanced CLS support", "J2534 API integration", "Dynamic CLS classification", "Main file conversion", "Improved context maintenance"],
         "endpoints": {
             "/convert": "POST - Upload VB6 ZIP for conversion",
             "/health": "GET - Health check"
@@ -909,12 +1007,15 @@ async def convert_vb6_project(
             (project_root / sub).mkdir(parents=True, exist_ok=True)
         logger.debug(f"Created project directory structure at {project_root}")
 
-        successful_files: List[str] = []
-        failed_files: List[str] = []
-        large_files: List[str] = []
+        # Convert main files first
+        main_results = converter.convert_main_files(input_dir, namespace, project_name, project_root)
+        successful_files = main_results["successful_files"]
+        failed_files = main_results["failed_files"]
+        large_files = []
 
+        # Convert other files
         for vb_path in input_dir.rglob("*"):
-            if not vb_path.is_file():
+            if not vb_path.is_file() or vb_path.name in successful_files + failed_files:
                 continue
             ext = vb_path.suffix.lower()
             if ext not in [".bas", ".cls"]:
@@ -972,41 +1073,6 @@ async def convert_vb6_project(
                 successful_files.append(vb_path.name)
                 logger.info(f"Classified and saved {vb_path.name} as {purpose}; converted to {list(converted.keys())}")
 
-        # Check for main files
-        expected_mains = ["MainModule.bas", "MainClass.cls", "Main.bas", "Main.cls"]
-        missing_mains = [f for f in expected_mains if f not in successful_files and f not in failed_files]
-        if missing_mains:
-            logger.warning(f"Missing main files: {missing_mains}; checking for existence")
-            for missing in missing_mains:
-                vb_path = next(input_dir.rglob(missing), None)
-                if vb_path and vb_path.is_file():
-                    try:
-                        content = vb_path.read_text(encoding="utf-8", errors="ignore")
-                        if content.strip():
-                            logger.info(f"Retrying conversion for {missing}")
-                            ext = vb_path.suffix.lower()
-                            base = vb_path.stem
-                            converted = converter.convert_bas_file(content, missing, namespace) if ext == ".bas" else converter.convert_cls_file(content, missing, namespace)
-                            if "error" in converted:
-                                logger.warning(f"Retry failed for {missing}: {converted['error']}")
-                                failed_files.append(f"{missing} (retry failed)")
-                                continue
-                            for file_name, code in converted.items():
-                                if file_name.endswith(".cs") and code:
-                                    sanitized_code = converter.sanitize_code(str(code))
-                                    if sanitized_code:
-                                        target_dir = "Services" if ext == ".bas" else ("Models" if converter.classify_cls_purpose(content) == "model" else "Services")
-                                        output_path = project_root / target_dir / (f"{base}.cs" if ext == ".cls" else file_name)
-                                        output_path.write_text(sanitized_code, encoding="utf-8")
-                                        logger.debug(f"Wrote {file_name if ext == '.bas' else base + '.cs'} to {target_dir}")
-                            successful_files.append(missing)
-                            logger.info(f"Retry successful for {missing}; converted to {list(converted.keys())}")
-                    except Exception as e:
-                        logger.error(f"Retry error for {missing}: {e}")
-                        failed_files.append(f"{missing} (retry error)")
-        if missing_mains:
-            logger.info(f"Missing main files after retry: {missing_mains}")
-
         (project_root / f"{project_name}.csproj").write_text(converter.create_csproj_file(project_name))
         (project_root / "Program.cs").write_text(converter.create_program_cs(project_name, namespace))
         (project_root / "Worker.cs").write_text(converter.create_worker_cs(project_name, namespace))
@@ -1036,12 +1102,13 @@ public static class Constants
 ## Failed Files
 {'\n'.join([f"- {file}" for file in failed_files]) if failed_files else "None"}
 
-## Missing Main Files
-{'\n'.join([f"- {file}" for file in missing_mains]) if missing_mains else "None"}
+## Main Files Converted
+{'\n'.join([f"- {file}" for file in main_results['successful_files']]) if main_results['successful_files'] else "None"}
 
 ## Notes
 This project was automatically converted from VB6 to C# .NET 9, with support for J2534 API integration.
-Large files were processed in chunks and reassembled.
+Large files were processed in chunks and reassembled with improved context maintenance.
+Main files (MainModule.bas, MainClass.cls, etc.) were explicitly converted with dependency tracking.
 CLS files were classified as 'model' or 'service' based on content:
 - Models: Placed in Models directory (mostly properties).
 - Services: Placed in Services directory (J2534 API calls or multiple methods).
@@ -1083,12 +1150,13 @@ dotnet run
             "failed_files": failed_files,
             "large_files_processed": large_files,
             "total_files_processed": len(successful_files) + len(failed_files),
-            "missing_main_files": missing_mains,
+            "main_files_converted": main_results["successful_files"],
             "conversion_summary": {
                 "total_files": len(successful_files) + len(failed_files),
                 "successful": len(successful_files),
                 "failed": len(failed_files),
                 "large_files": len(large_files),
+                "main_files": len(main_results["successful_files"])
             },
         }
         if failed_files:
@@ -1098,10 +1166,10 @@ dotnet run
             )
         if large_files:
             response_data["info"] = f"Large files were chunked and processed: {len(large_files)} files"
-        if missing_mains:
+        if main_results["failed_files"]:
             response_data["warning"] = (
-                response_data.get("warning", "") + f" Missing main files: {', '.join(missing_mains[:3])}"
-                + ("..." if len(missing_mains) > 3 else "")
+                response_data.get("warning", "") + f" Main files failed: {', '.join(main_results['failed_files'][:3])}"
+                + ("..." if len(main_results["failed_files"]) > 3 else "")
             )
 
         elapsed = round(time.time() - start_time, 2)
